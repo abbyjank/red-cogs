@@ -1,5 +1,8 @@
 # RoleTools Cog
 
+> [!NOTE]  
+> This cog is based on the original `roletools` cog from [Trusty-cogs](https://github.com/TrustyJAID/Trusty-cogs) by TrustyJAID.
+
 RoleTools is a feature-rich, highly configurable role management utility cog for Red Discord Bots. It supports self-assignable roles, automatic roles, temporary roles, reaction roles, role costs, role exclusivity, requirements, interactive buttons, select menus, and sticky roles.
 
 ---

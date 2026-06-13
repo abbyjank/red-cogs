@@ -2,6 +2,9 @@
 
 A collection of custom and modified cogs for [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot).
 
+> [!NOTE]  
+> The `roletools` and `welcome` cogs in this repository are based on the original versions from [Trusty-cogs](https://github.com/TrustyJAID/Trusty-cogs) by TrustyJAID.
+
 ## 📦 Included Cogs
 
 | Cog Name | Description |
