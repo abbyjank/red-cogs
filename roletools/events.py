@@ -140,13 +140,14 @@ class RoleToolsEvents(RoleToolsMixin):
             await self._auto_give(after)
         removed_roles = list(set(before.roles) - set(after.roles))
         added_roles = list(set(after.roles) - set(before.roles))
-        for role in added_roles:
-            if await self.config.role(role).sticky():
-                async with self.config.member(after).sticky_roles() as roles:
-                    if role.id not in roles:
-                        roles.append(role.id)
-        for role in removed_roles:
-            if await self.config.role(role).sticky():
+        if await self.config.guild(after.guild).sticky():
+            blacklist = await self.config.guild(after.guild).sticky_blacklist()
+            for role in added_roles:
+                if role.id not in blacklist and not role.is_default():
+                    async with self.config.member(after).sticky_roles() as roles:
+                        if role.id not in roles:
+                            roles.append(role.id)
+            for role in removed_roles:
                 async with self.config.member(after).sticky_roles() as roles:
                     if role.id in roles:
                         roles.remove(role.id)
@@ -575,9 +576,12 @@ class RoleToolsEvents(RoleToolsMixin):
         guild = member.guild
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
+        if not await self.config.guild(guild).sticky():
+            return
+        blacklist = await self.config.guild(guild).sticky_blacklist()
         async with self.config.member(member).sticky_roles() as sticky_roles:
             for role in member.roles:
-                if not await self.config.role(role).sticky():
+                if role.is_default() or role.id in blacklist:
                     continue
                 if role.id not in sticky_roles:
                     sticky_roles.append(role.id)
@@ -588,14 +592,19 @@ class RoleToolsEvents(RoleToolsMixin):
             return
         if not guild.me.guild_permissions.manage_roles:
             return
+        if not await self.config.guild(guild).sticky():
+            return
         to_reapply = await self.config.member(member).sticky_roles()
         if not to_reapply:
             return
         await self.config.member(member).sticky_roles.clear()
 
+        blacklist = await self.config.guild(guild).sticky_blacklist()
         to_add = []
 
         for role_id in to_reapply:
+            if role_id in blacklist:
+                continue
             role = guild.get_role(role_id)
             if role and role < guild.me.top_role:
                 to_add.append(role)

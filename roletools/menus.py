@@ -218,8 +218,11 @@ class StickyToggleButton(discord.ui.Button):
             )
             return
         cog = interaction.client.get_cog("RoleTools")
-        current = await cog.config.role(self.view._source.current_role).sticky()
-        await cog.config.role(self.view._source.current_role).sticky.set(not current)
+        async with cog.config.guild(interaction.guild).sticky_blacklist() as blacklist:
+            if self.view._source.current_role.id in blacklist:
+                blacklist.remove(self.view._source.current_role.id)
+            else:
+                blacklist.append(self.view._source.current_role.id)
         await self.view.show_page(self.view.current_page, interaction)
 
 
@@ -290,6 +293,8 @@ class RolePages(menus.ListPageSource):
     async def format_page(self, menu: BaseMenu, role: discord.Role):
         self.current_role = role
         role_settings = await menu.cog.config.role(role).all()
+        blacklist = await menu.cog.config.guild(menu.ctx.guild).sticky_blacklist()
+        role_settings["sticky"] = role.id not in blacklist
         menu.update_buttons(role_settings)
         msg = _("Role Settings for {role}\n".format(role=role.name))
         if menu.ctx.command.cog.is_discord:

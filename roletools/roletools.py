@@ -89,7 +89,7 @@ class RoleTools(
     """
 
     __author__ = ["TrustyJAID"]
-    __version__ = "1.6.0"
+    __version__ = "1.7.0"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -107,6 +107,8 @@ class RoleTools(
             select_options={},
             select_menus={},
             temporary_roles=[],
+            sticky=False,
+            sticky_blacklist=[],
         )
         self.config.register_role(
             sticky=False,
@@ -169,9 +171,37 @@ class RoleTools(
                     self._repo = cog.repo.clean_url
                 self._commit = cog.commit
 
+    async def _migrate_sticky_settings(self):
+        if await self.config.version() < "1.1.0":
+            all_roles = await self.config.all_roles()
+            sticky_guilds = {}
+            for role_id, data in all_roles.items():
+                if data.get("sticky"):
+                    role = self.bot.get_role(role_id)
+                    if role:
+                        if role.guild.id not in sticky_guilds:
+                            sticky_guilds[role.guild.id] = []
+                        sticky_guilds[role.guild.id].append(role.id)
+            
+            for guild_id, sticky_role_ids in sticky_guilds.items():
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                await self.config.guild(guild).sticky.set(True)
+                blacklist = []
+                for role in guild.roles:
+                    if role.id not in sticky_role_ids and not role.is_default():
+                        blacklist.append(role.id)
+                await self.config.guild(guild).sticky_blacklist.set(blacklist)
+            await self.config.version.set("1.1.0")
+
     async def load_views(self):
         self.settings = await self.config.all_guilds()
         await self.bot.wait_until_red_ready()
+        try:
+            await self._migrate_sticky_settings()
+        except Exception:
+            log.exception("Error migrating sticky settings")
         try:
             await self.initialize_select()
         except Exception:
@@ -589,12 +619,12 @@ class RoleTools(
                 async with self.config.member_from_ids(
                     ctx.guild.id, user
                 ).sticky_roles() as setting:
-                    if role in setting:
+                    if role.id in setting:
                         setting.remove(role.id)
             elif isinstance(user, discord.Member):
                 async with self.config.member(user).sticky_roles() as setting:
                     if role.id in setting:
-                        setting.append(role.id)
+                        setting.remove(role.id)
                 try:
                     await self.remove_roles(user, [role], reason=_("Force removed sticky role"))
                 except discord.HTTPException:

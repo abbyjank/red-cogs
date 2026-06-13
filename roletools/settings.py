@@ -239,43 +239,112 @@ class RoleToolsSettings(RoleToolsMixin):
                 )
                 await ctx.send(msg)
 
-    @roletools.command()
+    @roletools.group(name="sticky", invoke_without_command=True)
     @commands.admin_or_permissions(manage_roles=True)
     async def sticky(
         self,
         ctx: Context,
         true_or_false: Optional[bool] = None,
-        *,
-        role: RoleHierarchyConverter,
     ) -> None:
         """
-        Set whether or not a role will be re-applied when a user leaves and rejoins the server.
+        Configure sticky roles.
 
-        `[true_or_false]` optional boolean of what to set the setting to.
-        If not provided the current setting will be shown instead.
-        `<role>` The role you want to set.
+        `[true_or_false]` Optional boolean to enable/disable sticky roles (reassigning roles upon rejoining).
+        If not provided, shows current configuration.
         """
-        await ctx.typing()
-
-        cur_setting = await self.config.role(role).sticky()
-        if true_or_false is None:
-            if cur_setting:
-                msg = _("The {role} role is sticky.").format(role=role.mention)
+        if ctx.invoked_subcommand is None:
+            if true_or_false is None:
+                # Show status
+                enabled = await self.config.guild(ctx.guild).sticky()
+                blacklist = await self.config.guild(ctx.guild).sticky_blacklist()
+                blacklist_mentions = []
+                for role_id in blacklist:
+                    role = ctx.guild.get_role(role_id)
+                    if role:
+                        blacklist_mentions.append(role.name)
+                    else:
+                        blacklist_mentions.append(f"Unknown Role ({role_id})")
+                
+                blacklist_str = ", ".join(blacklist_mentions) if blacklist_mentions else "None"
+                msg = _("Sticky roles (reassign roles upon rejoining): {enabled}\nBlacklisted roles: {blacklist}").format(
+                    enabled=enabled, blacklist=blacklist_str
+                )
                 await ctx.send(msg)
             else:
-                command = f"{ctx.clean_prefix}roletools sticky yes {role.name}"
-                msg = _(
-                    "The {role} role is not sticky. Run the command {command} to make it sticky."
-                ).format(role=role.mention, command=command)
-                await ctx.send(msg)
+                await self.config.guild(ctx.guild).sticky.set(true_or_false)
+                if true_or_false:
+                    await ctx.send(_("Sticky roles (reassign roles upon rejoining) are now enabled."))
+                else:
+                    await ctx.send(_("Sticky roles (reassign roles upon rejoining) are now disabled."))
+
+    @sticky.group(name="blacklist", invoke_without_command=True)
+    @commands.admin_or_permissions(manage_roles=True)
+    async def sticky_blacklist(self, ctx: Context) -> None:
+        """
+        Manage blacklisted roles for sticky roles.
+        """
+        if ctx.invoked_subcommand is None:
+            # List blacklisted roles
+            blacklist = await self.config.guild(ctx.guild).sticky_blacklist()
+            if not blacklist:
+                await ctx.send(_("There are no blacklisted roles for sticky roles."))
+                return
+            blacklist_mentions = []
+            for role_id in blacklist:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    blacklist_mentions.append(role.mention)
+                else:
+                    blacklist_mentions.append(f"Unknown Role ({role_id})")
+            
+            await ctx.send(_("Blacklisted roles: {blacklist}").format(blacklist=", ".join(blacklist_mentions)))
+
+    @sticky_blacklist.command(name="add")
+    async def blacklist_add(self, ctx: Context, *, role: RoleHierarchyConverter) -> None:
+        """
+        Add a role to the sticky role blacklist.
+
+        `<role>` The role to prevent from being reassigned upon rejoining.
+        """
+        async with self.config.guild(ctx.guild).sticky_blacklist() as blacklist:
+            if role.id in blacklist:
+                await ctx.send(_("That role is already blacklisted."))
+                return
+            blacklist.append(role.id)
+        await ctx.send(_("{role} has been added to the sticky role blacklist.").format(role=role.name))
+
+    @sticky_blacklist.command(name="remove", aliases=["delete"])
+    async def blacklist_remove(self, ctx: Context, *, role: RoleHierarchyConverter) -> None:
+        """
+        Remove a role from the sticky role blacklist.
+
+        `<role>` The role to allow being reassigned upon rejoining.
+        """
+        async with self.config.guild(ctx.guild).sticky_blacklist() as blacklist:
+            if role.id not in blacklist:
+                await ctx.send(_("That role is not blacklisted."))
+                return
+            blacklist.remove(role.id)
+        await ctx.send(_("{role} has been removed from the sticky role blacklist.").format(role=role.name))
+
+    @sticky_blacklist.command(name="list")
+    async def blacklist_list(self, ctx: Context) -> None:
+        """
+        List all blacklisted roles for sticky roles.
+        """
+        blacklist = await self.config.guild(ctx.guild).sticky_blacklist()
+        if not blacklist:
+            await ctx.send(_("There are no blacklisted roles for sticky roles."))
             return
-        if true_or_false is True:
-            await self.config.role(role).sticky.set(True)
-            msg = _("The {role} role is now sticky.").format(role=role.mention)
-        if true_or_false is False:
-            await self.config.role(role).sticky.set(False)
-            msg = _("The {role} role is no longer sticky.").format(role=role.mention)
-        await ctx.send(msg)
+        blacklist_mentions = []
+        for role_id in blacklist:
+            role = ctx.guild.get_role(role_id)
+            if role:
+                blacklist_mentions.append(role.mention)
+            else:
+                blacklist_mentions.append(f"Unknown Role ({role_id})")
+        
+        await ctx.send(_("Blacklisted roles: {blacklist}").format(blacklist=", ".join(blacklist_mentions)))
 
     @roletools.command(aliases=["auto"])
     @commands.admin_or_permissions(manage_roles=True)

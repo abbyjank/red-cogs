@@ -264,8 +264,6 @@ class RoleToolsMixin(ABC):
         self,
         ctx: commands.Context,
         true_or_false: Optional[bool] = None,
-        *,
-        role: RoleHierarchyConverter,
     ) -> None:
         raise NotImplementedError()
 
