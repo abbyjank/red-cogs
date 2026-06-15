@@ -32,10 +32,9 @@ Use `[p]welcomeset` to manage the cog settings. All commands require administrat
   Shows the server's current welcome, goodbye, DM, and bot configuration settings.
 
 ### Whisper / DM Greetings
-* `[p]welcomeset whisper [choice]`  
+* `[p]welcomeset whisper set <choice>` (Alias: `toggle`)  
   Sets whether or not a DM is sent to the new user.  
-  * **Choices:** `off` (turn off DMs), `only` (only DM, no channel message), `both` (send both DM and channel message).  
-  * If no option is specified, toggles between `off` and `only`.
+  * **Choices:** `off` (turn off DMs), `only` (only DM, no channel message), `both` (send both DM and channel message).
 * `[p]welcomeset whisper add <format_msg>`  
   Adds a DM-specific welcome message format to be chosen at random.
 * `[p]welcomeset whisper list` (Aliases: `edit`, `delete`, `del`)  

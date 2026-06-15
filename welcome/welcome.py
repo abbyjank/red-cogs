@@ -676,31 +676,22 @@ class Welcome(Events, commands.Cog):
             msg = _("Bots that join this guild will not be given a role.")
         await ctx.send(msg)
 
-    @welcomeset.group(name="whisper", aliases=["dm"], invoke_without_command=True)
-    async def whisper(self, ctx: commands.Context, choice: Optional[str] = None) -> None:
-        """Manage and set whisper/DM greetings.
+    @welcomeset.group(name="whisper", aliases=["dm"])
+    async def whisper(self, ctx: commands.Context) -> None:
+        """Manage and set whisper/DM greetings."""
+        pass
 
-        If no subcommand is called, sets whether or not a DM is sent to the new user.
+    @whisper.command(name="set", aliases=["toggle"])
+    async def whisper_set(self, ctx: commands.Context, choice: Literal["off", "only", "both"]) -> None:
+        """Set whether/where a DM is sent to the new user.
 
-        Options:
-            off - turns off DMs to users
-            only - only send a DM to the user, don"t send a greeting to the channel
-            both - send a message to both the user and the channel
-
-        If Option isn't specified, toggles between "off" and "only"
-        DMs will not be sent to bots"""
-        if ctx.invoked_subcommand is not None:
-            return
+        - `off`: Turn off DMs.
+        - `only`: Only welcome the user in DM (no channel message).
+        - `both`: Welcome the user in both DM and channel.
+        """
         options = {"off": False, "only": True, "both": "BOTH"}
         guild = ctx.message.guild
-        guild_settings = await self.config.guild(guild).WHISPER()
-        if choice is None:
-            guild_settings = not guild_settings
-        elif choice.lower() not in options:
-            await ctx.send(_("You must select either `off`, `only`, or `both`."))
-            return
-        else:
-            guild_settings = options[choice.lower()]
+        guild_settings = options[choice]
         await self.config.guild(guild).WHISPER.set(guild_settings)
         if not guild_settings:
             await ctx.send(_("I will no longer send DMs to new users"))
