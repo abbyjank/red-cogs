@@ -3,12 +3,14 @@
 A collection of custom and modified cogs for [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot).
 
 > [!NOTE]  
-> The `roletools` and `welcome` cogs in this repository are based on the original versions from [Trusty-cogs](https://github.com/TrustyJAID/Trusty-cogs) by TrustyJAID.
+> - The `roletools` and `welcome` cogs in this repository are based on the original versions from [Trusty-cogs](https://github.com/TrustyJAID/Trusty-cogs) by TrustyJAID.
+> - The `emojitracker` cog is based on the original version from [vrt-cogs](https://github.com/vertyco/vrt-cogs/tree/main/emojitracker) by vertyco.
 
 ## 📦 Included Cogs
 
 | Cog Name | Description |
 | :--- | :--- |
+| **[EmojiTracker](file:///home/abusch/cogs/red-cogs/emojitracker/README.md)** | Track custom emojis in text channels and threads, with features for self-reaction counts, leaderboards, and unused/least used emojis. |
 | **[RoleTools](file:///home/abusch/cogs/red-cogs/roletools/README.md)** | Advanced role utility commands. Features reaction roles, automatic roles, temporary roles, role credit costs, inclusive/exclusive role settings, required role checks, interactive buttons/dropdown select menus, and refactored sticky roles (with a guild-wide toggle and role blacklist support). |
 | **[Welcome](file:///home/abusch/cogs/red-cogs/welcome/README.md)** | Welcomes new users to the server or says goodbye when they leave. Supports custom channels, DMs, verification gating, and bot greeting roles. |
 
@@ -24,12 +26,18 @@ To add this repository to your instance of Red Discord Bot:
    ```
 2. Install the cogs you want:
    ```bash
+   [p]cog install abby-red-cogs emojitracker
+   ```
+   ```bash
    [p]cog install abby-red-cogs roletools
    ```
    ```bash
    [p]cog install abby-red-cogs welcome
    ```
 3. Load the cogs:
+   ```bash
+   [p]cog load emojitracker
+   ```
    ```bash
    [p]cog load roletools
    ```
