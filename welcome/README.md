@@ -39,6 +39,8 @@ Use `[p]welcomeset` to manage the cog settings. All commands require administrat
   Adds a DM-specific welcome message format to be chosen at random.
 * `[p]welcomeset whisper list` (Aliases: `edit`, `delete`, `del`)  
   Lists all DM-specific greetings. Shows an interactive menu to edit or delete existing messages.
+* `[p]welcomeset whisper test`  
+  Sends a temporary test whisper/DM greeting message to you (deleted after 60 seconds).
 
 ### Channel Greetings
 * `[p]welcomeset greeting toggle`  

@@ -746,6 +746,11 @@ class Welcome(Events, commands.Cog):
         log.debug({c.custom_id for c in menu.children})
         await menu.start(ctx)
 
+    @whisper.command(name="test")
+    async def whisper_test(self, ctx: commands.Context) -> None:
+        """Test the whisper/DM greeting message (deleted after 60 seconds)."""
+        await self.send_testing_msg(ctx, whisper=True)
+
     @welcomeset.group(name="embed")
     async def _embed(self, ctx: commands.Context) -> None:
         """

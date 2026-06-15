@@ -478,7 +478,12 @@ class Events:
                 )
 
     async def send_testing_msg(
-        self, ctx: commands.Context, bot: bool = False, msg: str = None, leave: bool = False
+        self,
+        ctx: commands.Context,
+        bot: bool = False,
+        msg: str = None,
+        leave: bool = False,
+        whisper: bool = False,
     ) -> None:
         # log.info(leave)
         default_greeting = "Welcome {0.name} to {1.name}!"
@@ -513,19 +518,19 @@ class Events:
         member = cast(discord.Member, ctx.message.author)
         members = cast(List[discord.Member], [ctx.author, ctx.me])
         whisper_settings = guild_settings["WHISPER"]
-        if channel is None and whisper_settings not in ["BOTH", True]:
+        if channel is None and whisper_settings not in ["BOTH", True] and not whisper:
             msg = _("I can't find the specified channel. It might have been deleted.")
             await ctx.send(msg)
             return
         msg = _("Sending test message to {location}. ").format(
-            location="DM" if channel is None else channel.mention
+            location="DM" if (channel is None or whisper) else channel.mention
         )
         if not guild_settings["GREETING"] and not leave:
             msg += _("Using default greeting because there are none saved.")
         elif not guild_settings["GOODBYE"] and leave:
             msg += _("Using default goodbye because there are none saved.")
         await ctx.send(msg, allowed_mentions=allowed_mentions)
-        if not bot and guild_settings["WHISPER"]:
+        if not bot and (guild_settings["WHISPER"] or whisper):
             whisper_rand_msg = rand_choice(whisper_choices)
             if whisper_rand_msg is None:
                 whisper_rand_msg = default_greeting
@@ -538,7 +543,7 @@ class Events:
                     delete_after=60,
                     allowed_mentions=allowed_mentions,
                 )
-            if guild_settings["WHISPER"] != "BOTH":
+            if whisper or guild_settings["WHISPER"] != "BOTH":
                 return
         if bot or whisper_settings is not True:
             if not channel:
