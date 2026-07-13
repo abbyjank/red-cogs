@@ -395,7 +395,10 @@ class Pinhead(commands.Cog):
 
     @pinheadset.command(name="modchannel")
     async def set_mod_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
-        """Set or clear the channel where pin requests will be sent for moderator approval."""
+        """Set or clear the mod approval channel.
+
+        Pin requests will be sent here for moderator approval.
+        """
         if channel is None:
             await self.config.guild(ctx.guild).mod_channel.set(None)
             await ctx.send("Pin requests have been disabled (mod channel cleared).")
@@ -414,8 +417,8 @@ class Pinhead(commands.Cog):
 
     @pinheadset.command(name="trigger")
     async def set_trigger(self, ctx: commands.Context):
-        """Set the emoji used to trigger a pin request by reacting to a message.
-        
+        """Set the trigger emoji.
+
         The bot will prompt you to react to a message to configure the emoji.
         """
         msg = await ctx.send(
@@ -448,8 +451,8 @@ class Pinhead(commands.Cog):
 
     @pinheadset.command(name="approveemoji")
     async def set_approve_emoji(self, ctx: commands.Context):
-        """Set the emoji added to the original message when a request is approved.
-        
+        """Set the approval emoji.
+
         The bot will prompt you to react to a message to configure the emoji.
         """
         msg = await ctx.send(
@@ -482,7 +485,10 @@ class Pinhead(commands.Cog):
 
     @pinheadset.command(name="cooldown")
     async def set_cooldown(self, ctx: commands.Context, seconds: int):
-        """Set the rate limit cooldown (in seconds) per user for triggering pin requests."""
+        """Set the pin request cooldown.
+
+        Configures the rate limit cooldown (in seconds) per user.
+        """
         if seconds < 0 or seconds > 86400:
             await ctx.send("Please provide a cooldown value between 0 and 86400 seconds (24 hours).")
             return
@@ -492,7 +498,7 @@ class Pinhead(commands.Cog):
 
     @pinheadset.command(name="settings", aliases=["show", "view"])
     async def show_settings(self, ctx: commands.Context):
-        """Show the current Pinhead configuration for this server."""
+        """Show current Pinhead settings."""
         guild_config = self.config.guild(ctx.guild)
         trigger = await guild_config.trigger_emoji()
         approve = await guild_config.approve_emoji()
