@@ -1,0 +1,30 @@
+{
+    "author": [
+        "Antigravity"
+    ],
+    "description": "A system where users can react to a message with a specific emoji to request a pin. Moderators can then approve or deny the request via buttons in a mod channel.",
+    "disabled": false,
+    "end_user_data_statement": "This cog does not persistently store data or metadata about users.",
+    "hidden": false,
+    "install_msg": "Use `[p]pinheadset` to configure the options.",
+    "max_bot_version": "0.0.0",
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        8,
+        0
+    ],
+    "name": "Pinhead",
+    "permissions": [
+        "manage_messages"
+    ],
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Request pins via reactions, approved by mods via buttons",
+    "tags": [
+        "pin",
+        "moderation",
+        "utility"
+    ],
+    "type": "COG"
+}
