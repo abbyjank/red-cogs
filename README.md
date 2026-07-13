@@ -12,6 +12,7 @@ A collection of custom and modified cogs for [Red-DiscordBot](https://github.com
 | :--- | :--- |
 | **[EmojiTracker](file:///home/abusch/cogs/red-cogs/emojitracker/README.md)** | Track custom emojis in text channels and threads, with features for self-reaction counts, leaderboards, and unused/least used emojis. |
 | **[RoleTools](file:///home/abusch/cogs/red-cogs/roletools/README.md)** | Advanced role utility commands. Features reaction roles, automatic roles, temporary roles, role credit costs, inclusive/exclusive role settings, required role checks, interactive buttons/dropdown select menus, and refactored sticky roles (with a guild-wide toggle and role blacklist support). |
+| **[Pinhead](file:///home/abusch/cogs/red-cogs/pinhead/README.md)** | Request message pins via reactions (defaults to 📌). Requests are sent to a designated mod channel with Approve/Deny buttons. Once approved, the bot pins the message and adds a configurable approval reaction (defaults to ✅). Features per-user rate limits and persistent interactions across bot restarts. |
 | **[Welcome](file:///home/abusch/cogs/red-cogs/welcome/README.md)** | Welcomes new users to the server or says goodbye when they leave. Supports custom channels, DMs, verification gating, and bot greeting roles. |
 
 ---
@@ -34,6 +35,9 @@ To add this repository to your instance of Red Discord Bot:
    ```bash
    [p]cog install abby-red-cogs welcome
    ```
+   ```bash
+   [p]cog install abby-red-cogs pinhead
+   ```
 3. Load the cogs:
    ```bash
    [p]cog load emojitracker
@@ -43,5 +47,8 @@ To add this repository to your instance of Red Discord Bot:
    ```
    ```bash
    [p]cog load welcome
+   ```
+   ```bash
+   [p]cog load pinhead
    ```
    *(Replace `[p]` with your bot's prefix.)*
