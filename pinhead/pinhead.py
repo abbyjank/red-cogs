@@ -799,6 +799,8 @@ class Pinhead(commands.Cog):
         approve = await guild_config.approve_emoji()
         mod_chan_id = await guild_config.mod_channel()
         cooldown = await guild_config.cooldown()
+        warn_message = await guild_config.warn_message()
+        block_message = await guild_config.block_message()
 
         mod_channel_mention = "Not Configured"
         if mod_chan_id:
@@ -816,5 +818,7 @@ class Pinhead(commands.Cog):
         embed.add_field(name="Approval Emoji", value=approve, inline=True)
         embed.add_field(name="Moderator Channel", value=mod_channel_mention, inline=True)
         embed.add_field(name="Cooldown", value=f"{cooldown} seconds", inline=True)
+        embed.add_field(name="Warning Message", value=warn_message, inline=False)
+        embed.add_field(name="Block Message", value=block_message, inline=False)
 
         await ctx.send(embed=embed)
