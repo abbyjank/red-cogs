@@ -132,7 +132,7 @@ class PinRequestView(discord.ui.View):
 
     @discord.ui.button(
         label="Deny",
-        style=discord.ButtonStyle.danger,
+        style=discord.ButtonStyle.secondary,
         custom_id="pinhead:deny"
     )
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -161,6 +161,14 @@ class PinRequestView(discord.ui.View):
             )
             return
 
+        data = active_requests[mod_msg_id]
+        channel_id = data["channel_id"]
+        message_id = data["message_id"]
+        requestor_id = data.get("requestor_id", 0)
+
+        # Handle denial (recording denied, clearing reaction, no DM)
+        await self.cog.handle_denial(interaction.guild, channel_id, message_id, requestor_id, "deny", interaction.user)
+
         # Remove from active requests config
         async with self.cog.config.active_requests() as reqs:
             reqs.pop(mod_msg_id, None)
@@ -175,6 +183,120 @@ class PinRequestView(discord.ui.View):
         embed.add_field(
             name="Status",
             value=f"❌ Denied by {interaction.user.mention}",
+            inline=False
+        )
+
+        await interaction.message.edit(embed=embed, view=self)
+
+    @discord.ui.button(
+        label="Warn",
+        style=discord.ButtonStyle.primary,
+        custom_id="pinhead:warn"
+    )
+    async def warn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Verify the user is a moderator or administrator
+        if not (await self.cog.bot.is_mod(interaction.user) or 
+                await self.cog.bot.is_admin(interaction.user) or 
+                await self.cog.bot.is_owner(interaction.user)):
+            await interaction.response.send_message(
+                "You do not have permission to warn for this request.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        mod_msg_id = str(interaction.message.id)
+        active_requests = await self.cog.config.active_requests()
+        if mod_msg_id not in active_requests:
+            for item in self.children:
+                item.disabled = True
+            await interaction.message.edit(view=self)
+            await interaction.followup.send(
+                "This request has already been handled or is no longer active.",
+                ephemeral=True
+            )
+            return
+
+        data = active_requests[mod_msg_id]
+        channel_id = data["channel_id"]
+        message_id = data["message_id"]
+        requestor_id = data.get("requestor_id", 0)
+
+        # Handle denial & warning
+        await self.cog.handle_denial(interaction.guild, channel_id, message_id, requestor_id, "warn", interaction.user)
+
+        # Remove from active requests config
+        async with self.cog.config.active_requests() as reqs:
+            reqs.pop(mod_msg_id, None)
+
+        # Disable buttons and update status on the mod message
+        for item in self.children:
+            item.disabled = True
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.orange()
+        embed.title = "Pin Request - Denied & Warned"
+        embed.add_field(
+            name="Status",
+            value=f"⚠️ Denied & Warned by {interaction.user.mention}",
+            inline=False
+        )
+
+        await interaction.message.edit(embed=embed, view=self)
+
+    @discord.ui.button(
+        label="Block",
+        style=discord.ButtonStyle.danger,
+        custom_id="pinhead:block"
+    )
+    async def block(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Verify the user is a moderator or administrator
+        if not (await self.cog.bot.is_mod(interaction.user) or 
+                await self.cog.bot.is_admin(interaction.user) or 
+                await self.cog.bot.is_owner(interaction.user)):
+            await interaction.response.send_message(
+                "You do not have permission to block for this request.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        mod_msg_id = str(interaction.message.id)
+        active_requests = await self.cog.config.active_requests()
+        if mod_msg_id not in active_requests:
+            for item in self.children:
+                item.disabled = True
+            await interaction.message.edit(view=self)
+            await interaction.followup.send(
+                "This request has already been handled or is no longer active.",
+                ephemeral=True
+            )
+            return
+
+        data = active_requests[mod_msg_id]
+        channel_id = data["channel_id"]
+        message_id = data["message_id"]
+        requestor_id = data.get("requestor_id", 0)
+
+        # Handle denial & block
+        await self.cog.handle_denial(interaction.guild, channel_id, message_id, requestor_id, "block", interaction.user)
+
+        # Remove from active requests config
+        async with self.cog.config.active_requests() as reqs:
+            reqs.pop(mod_msg_id, None)
+
+        # Disable buttons and update status on the mod message
+        for item in self.children:
+            item.disabled = True
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.dark_red()
+        embed.title = "Pin Request - Denied & Blocked"
+        embed.add_field(
+            name="Status",
+            value=f"🚫 Denied & Blocked by {interaction.user.mention}",
             inline=False
         )
 
@@ -195,9 +317,13 @@ class Pinhead(commands.Cog):
             "approve_emoji": "✅",
             "mod_channel": None,
             "cooldown": 60,
+            "warn_message": "Please do not abuse the pin system for frivolous requests.",
+            "block_message": "You have been blocked from pin requests. You can open a ticket to appeal this decision.",
+            "blocked_users": [],      # List of user IDs (int)
+            "denied_messages": [],    # List of message IDs (int)
         }
         default_global = {
-            "active_requests": {},  # mod_msg_id -> {"channel_id": int, "message_id": int}
+            "active_requests": {},  # mod_msg_id -> {"channel_id": int, "message_id": int, "requestor_id": int}
         }
         self.config.register_guild(**default_guild)
         self.config.register_global(**default_global)
@@ -252,6 +378,62 @@ class Pinhead(commands.Cog):
         except discord.HTTPException as e:
             raise UnknownPinError(f"Failed to pin the message: {e}")
 
+    async def handle_denial(
+        self,
+        guild: discord.Guild,
+        channel_id: int,
+        message_id: int,
+        requestor_id: int,
+        action: str,
+        mod_user: discord.Member
+    ):
+        """Helper to process request denial, record denied state, clear reactions, and DM/block users."""
+        # 1. Record denied message in config to prevent future prompts
+        async with self.config.guild(guild).denied_messages() as denied:
+            if message_id not in denied:
+                denied.append(message_id)
+
+        # 2. Try to clear the trigger reaction on the original message
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                pass
+
+        if channel:
+            try:
+                message = await channel.fetch_message(message_id)
+                trigger_emoji = await self.config.guild(guild).trigger_emoji()
+                await message.clear_reaction(trigger_emoji)
+            except discord.HTTPException:
+                pass
+
+        # 3. Send DMs / Perform blocks
+        requestor = self.bot.get_user(requestor_id)
+        if not requestor and requestor_id:
+            try:
+                requestor = await self.bot.fetch_user(requestor_id)
+            except discord.HTTPException:
+                pass
+
+        if requestor:
+            if action == "warn":
+                warn_msg = await self.config.guild(guild).warn_message()
+                try:
+                    await requestor.send(f"Regarding your pin request in **{guild.name}**:\n{warn_msg}")
+                except discord.HTTPException:
+                    pass
+            elif action == "block":
+                block_msg = await self.config.guild(guild).block_message()
+                async with self.config.guild(guild).blocked_users() as blocked:
+                    if requestor_id not in blocked:
+                        blocked.append(requestor_id)
+                try:
+                    await requestor.send(f"Regarding your pin request in **{guild.name}**:\n{block_msg}")
+                except discord.HTTPException:
+                    pass
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         # Ignore non-guild reactions
@@ -264,6 +446,24 @@ class Pinhead(commands.Cog):
 
         guild_id = payload.guild_id
         guild_config = self.config.guild_from_id(guild_id)
+
+        # 1. Check if user is blocked
+        blocked_users = await guild_config.blocked_users()
+        if payload.user_id in blocked_users:
+            # User is blocked! Remove their reaction and return
+            channel = self.bot.get_channel(payload.channel_id)
+            if not channel:
+                try:
+                    channel = await self.bot.fetch_channel(payload.channel_id)
+                except discord.HTTPException:
+                    return
+            try:
+                message = await channel.fetch_message(payload.message_id)
+                await message.remove_reaction(payload.emoji, payload.member)
+            except discord.HTTPException:
+                pass
+            return
+
         trigger_emoji = await guild_config.trigger_emoji()
 
         # Check if the emoji matches the configured trigger emoji
@@ -294,6 +494,17 @@ class Pinhead(commands.Cog):
 
         # If already pinned, do nothing
         if message.pinned:
+            return
+
+        # 2. Check if the message was already denied
+        denied_messages = await guild_config.denied_messages()
+        if message.id in denied_messages:
+            # Already denied, remove reaction and return
+            try:
+                if payload.member:
+                    await message.remove_reaction(payload.emoji, payload.member)
+            except discord.HTTPException:
+                pass
             return
 
         # Enforce rate limit/cooldown
@@ -382,7 +593,11 @@ class Pinhead(commands.Cog):
 
         # Save to active requests and update user's cooldown
         async with self.config.active_requests() as reqs:
-            reqs[str(mod_msg.id)] = {"channel_id": channel.id, "message_id": message.id}
+            reqs[str(mod_msg.id)] = {
+                "channel_id": channel.id,
+                "message_id": message.id,
+                "requestor_id": user_id
+            }
         
         self.cooldowns[(guild_id, user_id)] = current_time
 
@@ -391,7 +606,8 @@ class Pinhead(commands.Cog):
     @commands.group(name="pinheadset")
     async def pinheadset(self, ctx: commands.Context):
         """Configure Pinhead settings."""
-        pass
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help()
 
     @pinheadset.command(name="modchannel")
     async def set_mod_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
@@ -495,6 +711,85 @@ class Pinhead(commands.Cog):
 
         await self.config.guild(ctx.guild).cooldown.set(seconds)
         await ctx.send(f"Success! Cooldown has been set to {seconds} seconds.")
+
+    @pinheadset.command(name="warnmsg")
+    async def set_warn_message(self, ctx: commands.Context, *, message: str = None):
+        """Set the warning message sent to a user via DM.
+
+        If not provided, the default warning message will be restored.
+        """
+        if message is None:
+            default_msg = "Please do not abuse the pin system for frivolous requests."
+            await self.config.guild(ctx.guild).warn_message.set(default_msg)
+            await ctx.send("Warning message reset to default.")
+        else:
+            await self.config.guild(ctx.guild).warn_message.set(message)
+            await ctx.send("Warning message updated successfully.")
+
+    @pinheadset.command(name="blockmsg")
+    async def set_block_message(self, ctx: commands.Context, *, message: str = None):
+        """Set the block message sent to a user via DM.
+
+        If not provided, the default block message will be restored.
+        """
+        if message is None:
+            default_msg = (
+                "You have been blocked from pin requests. You can open a ticket to appeal "
+                "this decision."
+            )
+            await self.config.guild(ctx.guild).block_message.set(default_msg)
+            await ctx.send("Block message reset to default.")
+        else:
+            await self.config.guild(ctx.guild).block_message.set(message)
+            await ctx.send("Block message updated successfully.")
+
+    @pinheadset.group(name="block")
+    async def block_group(self, ctx: commands.Context):
+        """Manage blocked users for pin requests."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help()
+
+    @block_group.command(name="add")
+    async def block_add(self, ctx: commands.Context, user: discord.User):
+        """Block a user from requesting pins.
+
+        This ignores any future reactions from them.
+        """
+        async with self.config.guild(ctx.guild).blocked_users() as blocked:
+            if user.id not in blocked:
+                blocked.append(user.id)
+                await ctx.send(f"{user.mention} ({user.id}) has been blocked from requesting pins.")
+            else:
+                await ctx.send(f"{user.mention} is already blocked.")
+
+    @block_group.command(name="remove", aliases=["delete", "del"])
+    async def block_remove(self, ctx: commands.Context, user: discord.User):
+        """Unblock a user from requesting pins."""
+        async with self.config.guild(ctx.guild).blocked_users() as blocked:
+            if user.id in blocked:
+                blocked.remove(user.id)
+                await ctx.send(f"{user.mention} ({user.id}) has been unblocked.")
+            else:
+                await ctx.send(f"{user.mention} is not blocked.")
+
+    @block_group.command(name="list")
+    async def block_list(self, ctx: commands.Context):
+        """List all blocked users in this server."""
+        blocked = await self.config.guild(ctx.guild).blocked_users()
+        if not blocked:
+            await ctx.send("No users are currently blocked.")
+            return
+
+        mentions = []
+        for uid in blocked:
+            user = self.bot.get_user(uid)
+            if user:
+                mentions.append(f"{user.mention} ({user.id})")
+            else:
+                mentions.append(f"Unknown User ({uid})")
+
+        text = "\n".join(mentions)
+        await ctx.send(f"**Blocked Users:**\n{text}")
 
     @pinheadset.command(name="settings", aliases=["show", "view"])
     async def show_settings(self, ctx: commands.Context):
