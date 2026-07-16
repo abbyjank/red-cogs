@@ -446,11 +446,16 @@ class Pinhead(commands.Cog):
 
         guild_id = payload.guild_id
         guild_config = self.config.guild_from_id(guild_id)
+        trigger_emoji = await guild_config.trigger_emoji()
+
+        # Check if the emoji matches the configured trigger emoji
+        if str(payload.emoji) != trigger_emoji:
+            return
 
         # 1. Check if user is blocked
         blocked_users = await guild_config.blocked_users()
         if payload.user_id in blocked_users:
-            # User is blocked! Remove their reaction and return
+            # User is blocked! Remove their trigger reaction and return
             channel = self.bot.get_channel(payload.channel_id)
             if not channel:
                 try:
@@ -462,12 +467,6 @@ class Pinhead(commands.Cog):
                 await message.remove_reaction(payload.emoji, payload.member)
             except discord.HTTPException:
                 pass
-            return
-
-        trigger_emoji = await guild_config.trigger_emoji()
-
-        # Check if the emoji matches the configured trigger emoji
-        if str(payload.emoji) != trigger_emoji:
             return
 
         # Check if mod channel is configured
