@@ -14,6 +14,7 @@ A collection of custom and modified cogs for [Red-DiscordBot](https://github.com
 | **[RoleTools](file:///home/abusch/cogs/red-cogs/roletools/README.md)** | Advanced role utility commands. Features reaction roles, automatic roles, temporary roles, role credit costs, inclusive/exclusive role settings, required role checks, interactive buttons/dropdown select menus, and refactored sticky roles (with a guild-wide toggle and role blacklist support). |
 | **[Pinhead](file:///home/abusch/cogs/red-cogs/pinhead/README.md)** | Request message pins via reactions (defaults to 📌). Requests are sent to a designated mod channel with Approve/Deny buttons. Once approved, the bot pins the message and adds a configurable approval reaction (defaults to ✅). Features per-user rate limits and persistent interactions across bot restarts. |
 | **[Welcome](file:///home/abusch/cogs/red-cogs/welcome/README.md)** | Welcomes new users to the server or says goodbye when they leave. Supports custom channels, DMs, verification gating, and bot greeting roles. |
+| **[EphemeralVents](file:///home/abusch/cogs/red-cogs/ephemeralvents/README.md)** | On-demand peer-support venting system generating ephemeral text channels with upfront interaction boundaries, inactivity auto-locking, and lifespan archival/deletion. |
 
 ---
 
@@ -38,6 +39,9 @@ To add this repository to your instance of Red Discord Bot:
    ```bash
    [p]cog install abby-red-cogs pinhead
    ```
+   ```bash
+   [p]cog install abby-red-cogs ephemeralvents
+   ```
 3. Load the cogs:
    ```bash
    [p]cog load emojitracker
@@ -50,5 +54,8 @@ To add this repository to your instance of Red Discord Bot:
    ```
    ```bash
    [p]cog load pinhead
+   ```
+   ```bash
+   [p]cog load ephemeralvents
    ```
    *(Replace `[p]` with your bot's prefix.)*

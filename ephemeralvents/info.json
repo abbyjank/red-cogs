@@ -1,0 +1,41 @@
+{
+    "author": [
+        "abbyjank",
+        "Antigravity"
+    ],
+    "description": "An on-demand, peer-support venting system that generates ephemeral text channels within the same category as a designated vent-hub master channel with upfront interaction boundaries.",
+    "disabled": false,
+    "end_user_data_statement": "This cog temporarily stores the Discord user ID of the vent creator to enforce rate limits and allow closing the vent. This data is deleted when the vent is closed or deleted.",
+    "hidden": false,
+    "install_msg": "Use `[p]ventset` to configure ephemeral vents.",
+    "max_bot_version": "0.0.0",
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        8,
+        0
+    ],
+    "name": "EphemeralVents",
+    "permissions": [
+        "manage_channels",
+        "manage_roles",
+        "manage_messages",
+        "embed_links",
+        "view_channel",
+        "send_messages",
+        "read_message_history"
+    ],
+    "required_cogs": {},
+    "requirements": [],
+    "short": "On-demand peer-support venting channels with interaction boundaries",
+    "tags": [
+        "venting",
+        "support",
+        "peer-support",
+        "mental-health",
+        "ephemeral",
+        "channels",
+        "utility"
+    ],
+    "type": "COG"
+}
