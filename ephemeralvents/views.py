@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Coroutine, Dict, Optional, Set
 
 import discord
 
 from .constants import (
     CLOSE_BUTTON_ID,
     DELETE_BUTTON_ID,
-    LEGACY_DELETE_BUTTON_ID,
+    HUB_MESSAGE_DELETE_DELAY,
     LAUNCHER_BUTTON_ID,
+    LEGACY_DELETE_BUTTON_ID,
     MAX_TOPIC_LENGTH,
 )
 
@@ -19,6 +21,16 @@ if TYPE_CHECKING:
     from .ephemeralvents import EphemeralVents
 
 log = logging.getLogger("red.antigravity.ephemeralvents.views")
+
+_background_tasks: Set[asyncio.Task] = set()
+
+
+def _create_tracked_task(coro: Coroutine) -> asyncio.Task:
+    """Create and track an asyncio task to prevent premature garbage collection."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 class VentLauncherView(discord.ui.View):
@@ -197,8 +209,11 @@ class IntentSelect(discord.ui.Select):
                 topic=self.topic,
             )
             await interaction.edit_original_response(
-                content=f"✅ Your vent channel has been created: {channel.mention}",
+                content=f"✅ Your vent channel has been created: {channel.mention}\n*(This message will auto-delete in 60 seconds)*",
                 view=None,
+            )
+            _create_tracked_task(
+                self._delete_response_after(interaction, HUB_MESSAGE_DELETE_DELAY)
             )
         except discord.Forbidden as e:
             log.warning(f"Forbidden while creating vent channel in guild {guild.id}: {e}")
@@ -212,6 +227,19 @@ class IntentSelect(discord.ui.Select):
                 content=f"❌ An error occurred while creating your vent channel: {e}",
                 view=None,
             )
+
+    @staticmethod
+    async def _delete_response_after(
+        interaction: discord.Interaction, delay: float = HUB_MESSAGE_DELETE_DELAY
+    ) -> None:
+        """Delete original interaction response after a delay."""
+        try:
+            await asyncio.sleep(delay)
+            await interaction.delete_original_response()
+        except (discord.NotFound, discord.HTTPException):
+            pass
+        except Exception as e:
+            log.debug(f"Failed to delete original interaction response after delay: {e}")
 
 
 class IntentSelectView(discord.ui.View):

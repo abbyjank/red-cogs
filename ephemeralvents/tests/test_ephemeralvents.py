@@ -754,6 +754,53 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         await self.cog.intents_list.callback(self.cog, ctx)
         self.assertIn("Configured Vent Intents", ctx.send.await_args.args[0])
 
+    async def test_intent_select_callback_creates_vent_and_schedules_deletion(self):
+        """Selecting an intent creates the vent channel, updates the response, and schedules deletion."""
+        select = IntentSelect(self.cog, topic="Rough Day", intents=DEFAULT_INTENTS)
+        select._values = ["comfort"]
+
+        created_channel = MagicMock(spec=discord.TextChannel)
+        created_channel.mention = "<#8888>"
+        self.cog.create_vent_channel = AsyncMock(return_value=created_channel)
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.guild = self.guild
+        member = MagicMock(spec=discord.Member)
+        interaction.user = member
+        interaction.response = MagicMock()
+        interaction.response.edit_message = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.delete_original_response = AsyncMock()
+
+        view = MagicMock(spec=discord.ui.View)
+        view.children = [select]
+        select._view = view
+
+        with patch("ephemeralvents.views._create_tracked_task") as mock_create_task:
+            def handle_task(coro):
+                coro.close()
+                return MagicMock()
+
+            mock_create_task.side_effect = handle_task
+            await select.callback(interaction)
+            interaction.edit_original_response.assert_awaited_once()
+            call_kwargs = interaction.edit_original_response.await_args.kwargs
+            self.assertIn("✅ Your vent channel has been created", call_kwargs["content"])
+            self.assertIn("<#8888>", call_kwargs["content"])
+            self.assertIn("60 seconds", call_kwargs["content"])
+            mock_create_task.assert_called_once()
+
+    async def test_delete_response_after(self):
+        """Verify _delete_response_after deletes original response."""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.delete_original_response = AsyncMock()
+        await IntentSelect._delete_response_after(interaction, delay=0.0)
+        interaction.delete_original_response.assert_awaited_once()
+
+        # Should handle NotFound gracefully
+        interaction.delete_original_response.side_effect = discord.NotFound(MagicMock(), "Not found")
+        await IntentSelect._delete_response_after(interaction, delay=0.0)
+
     async def test_gdpr_methods(self):
         """Test red_get_data_for_user and red_delete_data_for_user."""
         async with self.cog.config.guild(self.guild).active_vents() as vents:
