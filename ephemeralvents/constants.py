@@ -37,7 +37,6 @@ DEFAULT_INTENTS: Dict[str, Dict[str, str]] = {
 }
 
 DEFAULT_CRISIS_HEADER: str = (
-    "### 🆘 Crisis Support & Resources\n"
     "If you or someone you know is going through a crisis or in immediate danger, please reach out to professional resources:\n"
     "• **US & Canada:** Call or text **988** (Suicide & Crisis Lifeline)\n"
     "• **Crisis Text Line:** Text **HOME** to **741741**\n"

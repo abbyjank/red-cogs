@@ -104,16 +104,25 @@ class EphemeralVents(commands.Cog):
         self.bot.add_view(ArchivedVentView(self))
         self.bot.add_view(LegacyArchivedVentView(self))
 
-        # Populate active channel cache from Config
+        # Populate active channel cache from Config and migrate legacy crisis header
         try:
             all_guilds = await self.config.all_guilds()
-            for _guild_id, guild_data in all_guilds.items():
+            for guild_id, guild_data in all_guilds.items():
                 active_vents = guild_data.get("active_vents", {})
                 for channel_id_str in active_vents.keys():
                     try:
                         self._active_channel_ids.add(int(channel_id_str))
                     except (ValueError, TypeError):
                         pass
+
+                crisis = guild_data.get("crisis_header", "")
+                if crisis and crisis.startswith("### 🆘 Crisis Support & Resources"):
+                    new_crisis = (
+                        crisis.split("\n", 1)[1].lstrip()
+                        if "\n" in crisis
+                        else DEFAULT_CRISIS_HEADER
+                    )
+                    await self.config.guild_from_id(guild_id).crisis_header.set(new_crisis)
         except Exception as e:
             log.error(f"Failed to load active vents cache: {e}")
 
@@ -299,6 +308,12 @@ class EphemeralVents(commands.Cog):
 
             # Construct opening embed
             crisis_header = await guild_config.crisis_header()
+            if crisis_header and crisis_header.startswith("### 🆘 Crisis Support & Resources"):
+                crisis_header = (
+                    crisis_header.split("\n", 1)[1].lstrip()
+                    if "\n" in crisis_header
+                    else DEFAULT_CRISIS_HEADER
+                )
             embed_color = INTENT_COLORS.get(intent_key, DEFAULT_EMBED_COLOR)
 
             title_text = f"{intent_emoji} Vent: {topic}" if topic else f"{intent_emoji} Vent Space"
@@ -698,6 +713,12 @@ class EphemeralVents(commands.Cog):
         active_vents = await cfg.active_vents()
         intents = await cfg.intents()
         crisis_header = await cfg.crisis_header()
+        if crisis_header and crisis_header.startswith("### 🆘 Crisis Support & Resources"):
+            crisis_header = (
+                crisis_header.split("\n", 1)[1].lstrip()
+                if "\n" in crisis_header
+                else DEFAULT_CRISIS_HEADER
+            )
 
         hub_ch = guild.get_channel(hub_channel_id) if hub_channel_id else None
         mod_role = guild.get_role(mod_role_id) if mod_role_id else None
