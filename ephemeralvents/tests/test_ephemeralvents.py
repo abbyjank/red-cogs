@@ -574,6 +574,39 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         reset_intents = await self.cog.config.guild(self.guild).intents()
         self.assertEqual(set(reset_intents.keys()), set(DEFAULT_INTENTS.keys()))
 
+        # 6. Help subcommands
+        ctx.send_help = AsyncMock()
+        await self.cog.ventset_help.callback(self.cog, ctx)
+        ctx.send_help.assert_awaited_with(self.cog.ventset)
+
+        await self.cog.intents_help.callback(self.cog, ctx)
+        ctx.send_help.assert_awaited_with(self.cog.ventset_intents)
+
+        # 7. show_settings embed vs plaintext fallback
+        channel = MagicMock(spec=discord.TextChannel)
+        ctx.channel = channel
+
+        # Test embed mode
+        channel.permissions_for.return_value.embed_links = True
+        await self.cog.show_settings(ctx)
+        call_kwargs = ctx.send.await_args.kwargs
+        self.assertIn("embed", call_kwargs)
+
+        # Test plaintext fallback (when embed_links = False)
+        channel.permissions_for.return_value.embed_links = False
+        await self.cog.show_settings(ctx)
+        call_args = ctx.send.await_args
+        self.assertIn("EphemeralVents Configuration", call_args.args[0])
+
+        # 8. intents_list embed vs plaintext fallback
+        channel.permissions_for.return_value.embed_links = True
+        await self.cog.intents_list.callback(self.cog, ctx)
+        self.assertIn("embed", ctx.send.await_args.kwargs)
+
+        channel.permissions_for.return_value.embed_links = False
+        await self.cog.intents_list.callback(self.cog, ctx)
+        self.assertIn("Configured Vent Intents", ctx.send.await_args.args[0])
+
     async def test_gdpr_methods(self):
         """Test red_get_data_for_user and red_delete_data_for_user."""
         async with self.cog.config.guild(self.guild).active_vents() as vents:

@@ -724,9 +724,42 @@ class EphemeralVents(commands.Cog):
 
         crisis_preview = crisis_header[:250] + "..." if len(crisis_header) > 250 else crisis_header
         embed.add_field(name="Crisis Header Preview", value=crisis_preview, inline=False)
-        embed.set_footer(text=f"Use {ctx.clean_prefix}ventset <subcommand> to edit settings.")
+        embed.set_footer(text=f"Use {ctx.clean_prefix}ventset help to view all available commands.")
 
-        await ctx.send(embed=embed)
+        can_embed = ctx.channel.permissions_for(ctx.guild.me).embed_links
+        if can_embed:
+            try:
+                await ctx.send(embed=embed)
+                return
+            except discord.Forbidden:
+                pass
+
+        # Plaintext fallback when bot lacks Embed Links permission in this channel
+        text_lines = [
+            "**⚙️ EphemeralVents Configuration**",
+            f"• **Hub Channel:** {hub_desc}",
+            f"• **Mod Role:** {mod_desc}",
+            f"• **Archive Category:** {arch_desc}",
+            f"• **Inactivity Timeout:** {inactivity_timeout:g} hours",
+            f"• **Hard Cap Lifespan:** {hard_cap_timeout:g} hours",
+            f"• **Post-Expiration Action:** `{post_action}`",
+            f"• **Active Vents:** {len(active_vents)} channel(s)",
+            f"• **Configured Intents ({len(intents)}):** {intent_summary if intent_summary else '*None*'}",
+            f"• **Crisis Header Preview:** {crisis_preview}",
+            "",
+            f"*(Tip: Grant me 'Embed Links' permission in this channel for rich embeds. Use `{ctx.clean_prefix}ventset help` to view subcommands.)*",
+        ]
+        try:
+            await ctx.send("\n".join(text_lines))
+        except discord.Forbidden:
+            log.warning(
+                f"Forbidden while sending settings message in guild {guild.id} channel {ctx.channel.id}"
+            )
+
+    @ventset.command(name="help", aliases=["subcommands", "commands"])
+    async def ventset_help(self, ctx: commands.Context) -> None:
+        """List all available ventset subcommands and usage."""
+        await ctx.send_help(self.ventset)
 
     @ventset.command(name="channel")
     async def ventset_channel(
@@ -889,7 +922,43 @@ class EphemeralVents(commands.Cog):
                 inline=False,
             )
 
-        await ctx.send(embed=embed)
+        can_embed = ctx.channel.permissions_for(ctx.guild.me).embed_links
+        if can_embed:
+            try:
+                await ctx.send(embed=embed)
+                return
+            except discord.Forbidden:
+                pass
+
+        # Plaintext fallback when bot lacks Embed Links permission in this channel
+        lines = [
+            "**📋 Configured Vent Intents**",
+            "Users choose one of these intents when launching an ephemeral vent channel:",
+            "",
+        ]
+        for slug, data in intents.items():
+            emoji = data.get("emoji", "")
+            label = data.get("label", slug)
+            desc = data.get("description", "N/A")
+            note = data.get("header_note", "N/A")
+            lines.append(f"• **{emoji} {label}** (`{slug}`):")
+            lines.append(f"  - *Select Description:* {desc}")
+            lines.append(f"  - *Boundary Notice:* {note}")
+
+        lines.append("")
+        lines.append(f"*(Tip: Grant me 'Embed Links' permission in this channel for rich embeds.)*")
+
+        try:
+            await ctx.send("\n".join(lines))
+        except discord.Forbidden:
+            log.warning(
+                f"Forbidden while sending intents list in guild {ctx.guild.id} channel {ctx.channel.id}"
+            )
+
+    @ventset_intents.command(name="help", aliases=["subcommands", "commands"])
+    async def intents_help(self, ctx: commands.Context) -> None:
+        """List all available intents subcommands and usage."""
+        await ctx.send_help(self.ventset_intents)
 
     @ventset_intents.command(name="add", usage="<slug> <emoji> <label> | <header_note>")
     async def intents_add(

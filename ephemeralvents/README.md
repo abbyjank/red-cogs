@@ -48,6 +48,7 @@ All administrative settings are managed under the `[p]ventset` command group, re
 | Command | Description |
 | :--- | :--- |
 | `[p]ventset` / `[p]ventset show` | Display current EphemeralVents configuration and active vent count. |
+| `[p]ventset help` (aliases: `commands`, `subcommands`) | Display help and list all available `ventset` subcommands and their usage. |
 | `[p]ventset channel [#channel]` | Set the vent hub launcher channel and post the launcher embed (or clear if no channel given). |
 | `[p]ventset modrole [@role]` | Set or clear the moderator role for vent oversight and archive access. |
 | `[p]ventset archivecategory [category]` | Set or clear an optional category to move archived vent channels into. |
