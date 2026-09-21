@@ -54,7 +54,7 @@ All administrative settings are managed under the `[p]ventset` command group, re
 | `[p]ventset archivecategory [category]` | Set or clear an optional category to move archived vent channels into. |
 | `[p]ventset timeouts <inactivity_hours> <lifespan_hours>` | Set the inactivity lock and hard cap lifespan durations (default: `12` and `24`). |
 | `[p]ventset action <archive\|delete>` | Toggle post-expiration action between `archive` and `delete`. |
-| `[p]ventset crisis <text>` | Set crisis hotline numbers and guidelines (pass `reset` to restore default). |
+| `[p]ventset crisis [text]` | View current crisis text (bare command), update text, restore default (`reset`), or disable/remove (`off`/`clear`). |
 | `[p]ventset intents list` | List all configured intent presets, emojis, and boundary notes. |
 | `[p]ventset intents add <slug> <emoji> <label> \| <header_note>` | Add or update a custom intent (e.g. `rant 🔴 Rant Only \| No advice wanted.`). |
 | `[p]ventset intents remove <slug>` | Remove an intent profile (minimum 1 intent required). |

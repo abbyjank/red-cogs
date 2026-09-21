@@ -336,7 +336,8 @@ class EphemeralVents(commands.Cog):
                 inline=True,
             )
 
-            if crisis_header:
+            crisis_enabled = await guild_config.crisis_enabled()
+            if crisis_enabled and crisis_header:
                 embed.add_field(
                     name="Crisis & Peer Support Resources",
                     value=crisis_header,
@@ -712,6 +713,7 @@ class EphemeralVents(commands.Cog):
         post_action = await cfg.post_action()
         active_vents = await cfg.active_vents()
         intents = await cfg.intents()
+        crisis_enabled = await cfg.crisis_enabled()
         crisis_header = await cfg.crisis_header()
         if crisis_header and crisis_header.startswith("### 🆘 Crisis Support & Resources"):
             crisis_header = (
@@ -749,8 +751,15 @@ class EphemeralVents(commands.Cog):
             inline=False,
         )
 
-        crisis_preview = crisis_header[:250] + "..." if len(crisis_header) > 250 else crisis_header
-        embed.add_field(name="Crisis Header Preview", value=crisis_preview, inline=False)
+        if not crisis_enabled or not crisis_header:
+            crisis_preview = "🔴 *Disabled / Cleared*"
+        else:
+            crisis_preview = (
+                f"🟢 Enabled\n{crisis_header[:250]}..."
+                if len(crisis_header) > 250
+                else f"🟢 Enabled\n{crisis_header}"
+            )
+        embed.add_field(name="Crisis Header", value=crisis_preview, inline=False)
         embed.set_footer(text=f"Use {ctx.clean_prefix}ventset help to view all available commands.")
 
         can_embed = ctx.channel.permissions_for(ctx.guild.me).embed_links
@@ -922,18 +931,97 @@ class EphemeralVents(commands.Cog):
         await ctx.send(f"✅ Post-expiration action set to `{act}`.")
 
     @ventset.command(name="crisis")
-    async def ventset_crisis(self, ctx: commands.Context, *, text: str) -> None:
-        """Set crisis support header.
+    async def ventset_crisis(
+        self, ctx: commands.Context, *, text: Optional[str] = None
+    ) -> None:
+        """View or configure crisis support header.
 
-        Update or reset the crisis support header text ('reset' for default).
+        Run without arguments to view current crisis resources text.
+        Pass text to update, 'reset' for default, or 'off'/'clear' to disable.
         """
-        if text.strip().lower() == "reset":
-            await self.config.guild(ctx.guild).crisis_header.set(DEFAULT_CRISIS_HEADER)
-            await ctx.send("✅ Crisis support header text has been restored to default.")
+        guild = ctx.guild
+        cfg = self.config.guild(guild)
+
+        # Case 1: Bare command -> show current crisis text and status
+        if text is None:
+            crisis_enabled = await cfg.crisis_enabled()
+            crisis_header = await cfg.crisis_header()
+            if crisis_header and crisis_header.startswith("### 🆘 Crisis Support & Resources"):
+                crisis_header = (
+                    crisis_header.split("\n", 1)[1].lstrip()
+                    if "\n" in crisis_header
+                    else DEFAULT_CRISIS_HEADER
+                )
+
+            can_embed = ctx.channel.permissions_for(guild.me).embed_links
+
+            if not crisis_enabled or not crisis_header:
+                desc = (
+                    "🔴 **Status:** Disabled / Cleared\n\n"
+                    "No crisis support resources will be displayed in vent channels."
+                )
+                tip = f"Use `{ctx.clean_prefix}ventset crisis reset` to restore default or `{ctx.clean_prefix}ventset crisis on` to re-enable."
+            else:
+                desc = f"🟢 **Status:** Enabled\n\n{crisis_header}"
+                tip = (
+                    f"• **Update text:** `{ctx.clean_prefix}ventset crisis <text>`\n"
+                    f"• **Reset to default:** `{ctx.clean_prefix}ventset crisis reset`\n"
+                    f"• **Disable / clear:** `{ctx.clean_prefix}ventset crisis off` (or `clear`)"
+                )
+
+            if can_embed:
+                embed = discord.Embed(
+                    title="Crisis Support & Peer Resources",
+                    description=desc,
+                    color=discord.Color.teal() if (crisis_enabled and crisis_header) else discord.Color.red(),
+                    timestamp=discord.utils.utcnow(),
+                )
+                embed.set_footer(text=f"Use {ctx.clean_prefix}ventset crisis <option> to modify.")
+                try:
+                    await ctx.send(embed=embed)
+                    return
+                except discord.Forbidden:
+                    pass
+
+            # Plaintext fallback
+            msg = f"**Crisis Support & Peer Resources**\n\n{desc}\n\n{tip}"
+            try:
+                await ctx.send(msg)
+            except discord.Forbidden:
+                pass
             return
 
-        await self.config.guild(ctx.guild).crisis_header.set(text.strip())
-        await ctx.send("✅ Crisis support header text has been updated.")
+        clean_text = text.strip().strip("'\"")
+
+        # Case 2: Blank entry, clear, disable, off, none
+        if not clean_text or clean_text.lower() in ("clear", "none", "disable", "off"):
+            await cfg.crisis_enabled.set(False)
+            await ctx.send(
+                f"✅ Crisis support header has been disabled and removed from vent channels.\n"
+                f"*(Restore anytime with `{ctx.clean_prefix}ventset crisis reset` or `{ctx.clean_prefix}ventset crisis on`)*"
+            )
+            return
+
+        # Case 3: Enable / on
+        if clean_text.lower() in ("enable", "on"):
+            await cfg.crisis_enabled.set(True)
+            crisis_header = await cfg.crisis_header()
+            if not crisis_header:
+                await cfg.crisis_header.set(DEFAULT_CRISIS_HEADER)
+            await ctx.send("✅ Crisis support header has been enabled.")
+            return
+
+        # Case 4: Reset to default
+        if clean_text.lower() == "reset":
+            await cfg.crisis_header.set(DEFAULT_CRISIS_HEADER)
+            await cfg.crisis_enabled.set(True)
+            await ctx.send("✅ Crisis support header text has been restored to default and enabled.")
+            return
+
+        # Case 5: Update custom text
+        await cfg.crisis_header.set(clean_text)
+        await cfg.crisis_enabled.set(True)
+        await ctx.send("✅ Crisis support header text has been updated and enabled.")
 
     # -------------------------------------------------------------------------
     # Intent Management Subcommands ([p]ventset intents)

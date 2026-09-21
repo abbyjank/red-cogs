@@ -185,6 +185,7 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.guild.id = 123456789
         self.guild.default_role = MagicMock(spec=discord.Role)
         self.guild.me = MagicMock(spec=discord.Member)
+        await self.cog.config.clear_all_guilds()
 
     async def test_rate_limit_no_active(self):
         """User with no active vents should not be rate-limited."""
@@ -447,6 +448,55 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(active_vents["8888"]["intent_key"], "comfort")
         self.assertIn(8888, self.cog._active_channel_ids)
 
+        # Check embed has crisis header when enabled
+        send_kwargs = created_channel.send.await_args.kwargs
+        sent_embed = send_kwargs["embed"]
+        field_names = [f.name for f in sent_embed.fields]
+        self.assertIn("Crisis & Peer Support Resources", field_names)
+
+    async def test_create_vent_channel_crisis_disabled(self):
+        """When crisis_enabled is False, crisis header field is omitted from embed."""
+        author = MagicMock(spec=discord.Member)
+        author.id = 555
+        author.display_name = "Taylor"
+        author.mention = "<@555>"
+
+        category = MagicMock(spec=discord.CategoryChannel)
+        category.overwrites = {}
+
+        hub_channel = MagicMock(spec=discord.TextChannel)
+        hub_channel.category = category
+        self.guild.get_channel.return_value = hub_channel
+
+        created_channel = MagicMock(spec=discord.TextChannel)
+        created_channel.id = 7777
+        created_channel.send = AsyncMock()
+        created_channel.history = MagicMock()
+        pin_msg = MagicMock()
+        pin_msg.pin = AsyncMock()
+        created_channel.send.return_value = pin_msg
+
+        async def empty_history(*args, **kwargs):
+            if False:
+                yield None
+
+        created_channel.history.return_value = empty_history()
+        self.guild.create_text_channel = AsyncMock(return_value=created_channel)
+
+        await self.cog.config.guild(self.guild).hub_channel_id.set(1234)
+        await self.cog.config.guild(self.guild).crisis_enabled.set(False)
+
+        await self.cog.create_vent_channel(
+            guild=self.guild,
+            author=author,
+            intent_key="comfort",
+            topic="Test",
+        )
+
+        sent_embed = created_channel.send.await_args.kwargs["embed"]
+        field_names = [f.name for f in sent_embed.fields]
+        self.assertNotIn("Crisis & Peer Support Resources", field_names)
+
     async def test_close_vent_channel_manual(self):
         """Test manual close transitions to archive or delete."""
         channel = MagicMock(spec=discord.TextChannel)
@@ -540,10 +590,38 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         await self.cog.ventset_action.callback(self.cog, ctx, "invalid")
 
         # 3. Crisis command
+        # 3a. Update text
         await self.cog.ventset_crisis.callback(self.cog, ctx, text="Custom Help 123")
         self.assertEqual(await self.cog.config.guild(self.guild).crisis_header(), "Custom Help 123")
+        self.assertTrue(await self.cog.config.guild(self.guild).crisis_enabled())
+
+        # 3b. Bare command (view current text)
+        channel = MagicMock(spec=discord.TextChannel)
+        ctx.channel = channel
+        channel.permissions_for.return_value.embed_links = True
+        await self.cog.ventset_crisis.callback(self.cog, ctx, text=None)
+        ctx.send.assert_awaited()
+
+        # 3c. Clear / off / disable
+        await self.cog.ventset_crisis.callback(self.cog, ctx, text="off")
+        self.assertFalse(await self.cog.config.guild(self.guild).crisis_enabled())
+
+        # 3d. Bare command when disabled
+        await self.cog.ventset_crisis.callback(self.cog, ctx, text=None)
+        ctx.send.assert_awaited()
+
+        # 3e. On / enable
+        await self.cog.ventset_crisis.callback(self.cog, ctx, text="on")
+        self.assertTrue(await self.cog.config.guild(self.guild).crisis_enabled())
+
+        # 3f. Reset
         await self.cog.ventset_crisis.callback(self.cog, ctx, text="reset")
         self.assertEqual(await self.cog.config.guild(self.guild).crisis_header(), DEFAULT_CRISIS_HEADER)
+        self.assertTrue(await self.cog.config.guild(self.guild).crisis_enabled())
+
+        # 3g. Blank entry clears / disables
+        await self.cog.ventset_crisis.callback(self.cog, ctx, text='""')
+        self.assertFalse(await self.cog.config.guild(self.guild).crisis_enabled())
 
         # 4. Modrole command
         role = MagicMock(spec=discord.Role)

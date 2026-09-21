@@ -53,6 +53,7 @@ DEFAULT_GUILD: Dict[str, Any] = {
     "hard_cap_timeout": 24.0,
     "post_action": "archive",
     "crisis_header": DEFAULT_CRISIS_HEADER,
+    "crisis_enabled": True,
     "active_vents": {},
     "intents": DEFAULT_INTENTS,
 }
