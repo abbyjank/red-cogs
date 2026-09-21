@@ -20,6 +20,7 @@ from redbot.core.bot import Red
 
 from .constants import (
     CONFIG_IDENTIFIER,
+    DEFAULT_ARCHIVE_EMOJI,
     DEFAULT_CRISIS_HEADER,
     DEFAULT_EMBED_COLOR,
     DEFAULT_GUILD,
@@ -75,6 +76,40 @@ def sanitize_channel_name(emoji: str, topic: Optional[str], fallback: str) -> st
         return prefix[:100].rstrip("-")
 
     return f"{prefix}{clean_topic[:avail]}".rstrip("-")
+
+
+def format_archived_channel_name(
+    channel_name: str, archive_emoji: str = DEFAULT_ARCHIVE_EMOJI
+) -> str:
+    """Format channel name for archived status by replacing 'vent-<emoji>-' with archive emoji.
+
+    Examples:
+        'vent-🟡-abby' -> '♻️-abby'
+        'vent-🟠-rough-day' -> '♻️-rough-day'
+        'vent-heart-sadness' -> '♻️-sadness'
+        'vent-abby' -> '♻️-abby'
+    """
+    clean_name = channel_name.strip()
+    custom_match = re.match(r"<a?:([a-zA-Z0-9_]+):\d+>", archive_emoji)
+    emoji_str = custom_match.group(1).lower() if custom_match else archive_emoji
+
+    if clean_name.startswith(f"{emoji_str}-") or clean_name.startswith(emoji_str):
+        return clean_name[:100].rstrip("-")
+
+    # Match vent-<emoji_or_tag>-<remainder>
+    m_full = re.match(r"^vent-[^-]+-(.+)$", clean_name)
+    if m_full and m_full.group(1):
+        suffix = m_full.group(1)
+    else:
+        # Match vent-<remainder>
+        m_simple = re.match(r"^vent-(.+)$", clean_name)
+        if m_simple and m_simple.group(1):
+            suffix = m_simple.group(1)
+        else:
+            suffix = clean_name
+
+    archived = f"{emoji_str}-{suffix}".strip("-")
+    return archived[:100].rstrip("-")
 
 
 class EphemeralVents(commands.Cog):
@@ -462,17 +497,35 @@ class EphemeralVents(commands.Cog):
         except discord.Forbidden:
             pass
 
-        # 3. Optional move to archive_category_id if configured
+        # 3. Rename channel to archived format and optionally move to archive_category_id
+        archive_emoji = await guild_config.archive_emoji()
+        new_name = format_archived_channel_name(channel.name, archive_emoji=archive_emoji)
         archive_category_id = await guild_config.archive_category_id()
+        archive_cat = None
         if archive_category_id:
-            archive_cat = guild.get_channel(archive_category_id)
-            if isinstance(archive_cat, discord.CategoryChannel):
+            cat_obj = guild.get_channel(archive_category_id)
+            if isinstance(cat_obj, discord.CategoryChannel):
+                archive_cat = cat_obj
+
+        try:
+            if archive_cat:
+                await channel.edit(name=new_name, category=archive_cat, reason=reason)
+            else:
+                await channel.edit(name=new_name, reason=reason)
+        except discord.Forbidden:
+            log.warning(
+                f"Forbidden while renaming/moving channel {channel.id} during archive in guild {guild.id}"
+            )
+        except discord.HTTPException as e:
+            if archive_cat:
+                # If moving category failed (e.g. category 50-channel limit), attempt rename alone
                 try:
-                    await channel.edit(category=archive_cat, reason=reason)
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    log.warning(
-                        f"Could not move archived channel {channel.id} to category {archive_category_id}: {e}"
-                    )
+                    await channel.edit(name=new_name, reason=reason)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+            log.warning(
+                f"Could not update channel {channel.id} name/category during archive: {e}"
+            )
 
         # 4. Post moderator utility message with persistent Delete Vent Channel button
         embed = discord.Embed(
@@ -708,6 +761,7 @@ class EphemeralVents(commands.Cog):
         hub_channel_id = await cfg.hub_channel_id()
         mod_role_id = await cfg.mod_role_id()
         archive_category_id = await cfg.archive_category_id()
+        archive_emoji = await cfg.archive_emoji()
         inactivity_timeout = await cfg.inactivity_timeout()
         hard_cap_timeout = await cfg.hard_cap_timeout()
         post_action = await cfg.post_action()
@@ -739,6 +793,7 @@ class EphemeralVents(commands.Cog):
         embed.add_field(name="Hub Channel", value=hub_desc, inline=True)
         embed.add_field(name="Mod Role", value=mod_desc, inline=True)
         embed.add_field(name="Archive Category", value=arch_desc, inline=True)
+        embed.add_field(name="Archive Prefix", value=f"`{archive_emoji}-`", inline=True)
         embed.add_field(name="Inactivity Timeout", value=f"{inactivity_timeout:g} hours", inline=True)
         embed.add_field(name="Hard Cap Lifespan", value=f"{hard_cap_timeout:g} hours", inline=True)
         embed.add_field(name="Post-Expiration Action", value=f"`{post_action}`", inline=True)
@@ -776,6 +831,7 @@ class EphemeralVents(commands.Cog):
             f"• **Hub Channel:** {hub_desc}",
             f"• **Mod Role:** {mod_desc}",
             f"• **Archive Category:** {arch_desc}",
+            f"• **Archive Channel Prefix:** `{archive_emoji}-`",
             f"• **Inactivity Timeout:** {inactivity_timeout:g} hours",
             f"• **Hard Cap Lifespan:** {hard_cap_timeout:g} hours",
             f"• **Post-Expiration Action:** `{post_action}`",
@@ -893,6 +949,26 @@ class EphemeralVents(commands.Cog):
 
         await self.config.guild(ctx.guild).archive_category_id.set(category.id)
         await ctx.send(f"✅ Archive category set to **{category.name}**.")
+
+    @ventset.command(name="archiveemoji")
+    async def ventset_archiveemoji(
+        self, ctx: commands.Context, emoji: Optional[str] = None
+    ) -> None:
+        """Set archive prefix emoji.
+
+        Set the emoji prefix used when renaming archived channels (e.g. '♻️' or '📦').
+        Pass no emoji to reset to default ('♻️').
+        """
+        if not emoji:
+            await self.config.guild(ctx.guild).archive_emoji.set(DEFAULT_ARCHIVE_EMOJI)
+            await ctx.send(
+                f"✅ Archived channel emoji prefix reset to default (`{DEFAULT_ARCHIVE_EMOJI}-`)."
+            )
+            return
+
+        clean = emoji.strip()
+        await self.config.guild(ctx.guild).archive_emoji.set(clean)
+        await ctx.send(f"✅ Archived channel emoji prefix set to `{clean}-` (e.g. `{clean}-abby`).")
 
     @ventset.command(name="timeouts")
     async def ventset_timeouts(

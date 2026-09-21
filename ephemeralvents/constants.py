@@ -44,10 +44,13 @@ DEFAULT_CRISIS_HEADER: str = (
     "⚠️ *This space is for peer support only and is not a substitute for professional help. Please respect the author's interaction boundaries.*"
 )
 
+DEFAULT_ARCHIVE_EMOJI: str = "♻️"
+
 DEFAULT_GUILD: Dict[str, Any] = {
     "hub_channel_id": None,
     "mod_role_id": None,
     "archive_category_id": None,
+    "archive_emoji": DEFAULT_ARCHIVE_EMOJI,
     "inactivity_timeout": 12.0,
     "hard_cap_timeout": 24.0,
     "post_action": "archive",

@@ -11,6 +11,7 @@ from redbot.core import Config, data_manager
 from ephemeralvents.constants import (
     CLOSE_BUTTON_ID,
     CONFIG_IDENTIFIER,
+    DEFAULT_ARCHIVE_EMOJI,
     DEFAULT_CRISIS_HEADER,
     DEFAULT_GUILD,
     DEFAULT_INTENTS,
@@ -18,7 +19,11 @@ from ephemeralvents.constants import (
     LAUNCHER_BUTTON_ID,
     MAX_TOPIC_LENGTH,
 )
-from ephemeralvents.ephemeralvents import EphemeralVents, sanitize_channel_name
+from ephemeralvents.ephemeralvents import (
+    EphemeralVents,
+    format_archived_channel_name,
+    sanitize_channel_name,
+)
 from ephemeralvents.views import (
     ArchivedVentView,
     CloseVentView,
@@ -45,6 +50,7 @@ class TestConstantsAndNaming(unittest.TestCase):
             "hub_channel_id",
             "mod_role_id",
             "archive_category_id",
+            "archive_emoji",
             "inactivity_timeout",
             "hard_cap_timeout",
             "post_action",
@@ -58,6 +64,7 @@ class TestConstantsAndNaming(unittest.TestCase):
         self.assertEqual(DEFAULT_GUILD["inactivity_timeout"], 12.0)
         self.assertEqual(DEFAULT_GUILD["hard_cap_timeout"], 24.0)
         self.assertEqual(DEFAULT_GUILD["post_action"], "archive")
+        self.assertEqual(DEFAULT_GUILD["archive_emoji"], DEFAULT_ARCHIVE_EMOJI)
         self.assertIsNone(DEFAULT_GUILD["archive_category_id"])
 
     def test_default_intents(self):
@@ -130,6 +137,54 @@ class TestConstantsAndNaming(unittest.TestCase):
         """Verify custom emoji name extraction."""
         name = sanitize_channel_name("<:heart:123456789>", "sadness", "user")
         self.assertEqual(name, "vent-heart-sadness")
+
+    def test_format_archived_channel_name(self):
+        """Verify channel renaming when archived."""
+        # Standard colour emoji prefix
+        self.assertEqual(
+            format_archived_channel_name("vent-🟡-abby"),
+            "♻️-abby",
+        )
+        self.assertEqual(
+            format_archived_channel_name("vent-🟠-rough-day"),
+            "♻️-rough-day",
+        )
+        # Custom emoji prefix
+        self.assertEqual(
+            format_archived_channel_name("vent-heart-sadness"),
+            "♻️-sadness",
+        )
+        # Simple vent-prefix with single hyphen
+        self.assertEqual(
+            format_archived_channel_name("vent-abby"),
+            "♻️-abby",
+        )
+        # Channel not matching vent-prefix
+        self.assertEqual(
+            format_archived_channel_name("general-chat"),
+            "♻️-general-chat",
+        )
+        # Custom archive emoji
+        self.assertEqual(
+            format_archived_channel_name("vent-🟡-abby", archive_emoji="📦"),
+            "📦-abby",
+        )
+        # Custom emoji as archive emoji
+        self.assertEqual(
+            format_archived_channel_name("vent-🟡-abby", archive_emoji="<:box:1234567>"),
+            "box-abby",
+        )
+        # Already archived channel should not re-prefix
+        self.assertEqual(
+            format_archived_channel_name("♻️-abby"),
+            "♻️-abby",
+        )
+        # Channel name length capped at 100
+        long_name = "vent-🟡-" + ("a" * 150)
+        archived_long = format_archived_channel_name(long_name)
+        self.assertLessEqual(len(archived_long), 100)
+        self.assertTrue(archived_long.startswith("♻️-"))
+        self.assertFalse(archived_long.endswith("-"))
 
 
 class TestViewsAndModals(unittest.TestCase):
@@ -332,6 +387,7 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         """Periodic loop archives channel when hard_cap_timeout is reached and post_action is archive."""
         channel = MagicMock(spec=discord.TextChannel)
         channel.id = 600
+        channel.name = "vent-🟠-sadness"
         channel.guild = self.guild
         channel.set_permissions = AsyncMock()
         channel.send = AsyncMock()
@@ -356,6 +412,9 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
 
         # Overwrites should restrict @everyone
         channel.set_permissions.assert_awaited()
+        # Channel should be renamed with archive prefix
+        channel.edit.assert_awaited()
+        self.assertEqual(channel.edit.await_args.kwargs["name"], "♻️-sadness")
         # Notice with ArchivedVentView should be sent
         channel.send.assert_awaited()
 
@@ -501,9 +560,11 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         """Test manual close transitions to archive or delete."""
         channel = MagicMock(spec=discord.TextChannel)
         channel.id = 9999
+        channel.name = "vent-🟡-abby"
         channel.guild = self.guild
         channel.set_permissions = AsyncMock()
         channel.send = AsyncMock()
+        channel.edit = AsyncMock()
         channel.delete = AsyncMock()
         channel.overwrites_for.return_value = discord.PermissionOverwrite()
 
@@ -519,6 +580,8 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
 
         await self.cog.close_vent_channel(channel, closed_by=closer)
         channel.set_permissions.assert_awaited()
+        channel.edit.assert_awaited()
+        self.assertEqual(channel.edit.await_args.kwargs["name"], "♻️-abby")
         self.assertNotIn(9999, self.cog._active_channel_ids)
 
     async def test_on_message_listener(self):
@@ -631,6 +694,12 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.cog.config.guild(self.guild).mod_role_id(), 99999)
         await self.cog.ventset_modrole.callback(self.cog, ctx, None)
         self.assertIsNone(await self.cog.config.guild(self.guild).mod_role_id())
+
+        # 4b. Archive emoji command
+        await self.cog.ventset_archiveemoji.callback(self.cog, ctx, "📦")
+        self.assertEqual(await self.cog.config.guild(self.guild).archive_emoji(), "📦")
+        await self.cog.ventset_archiveemoji.callback(self.cog, ctx, None)
+        self.assertEqual(await self.cog.config.guild(self.guild).archive_emoji(), DEFAULT_ARCHIVE_EMOJI)
 
         # 5. Intents add / remove / reset
         await self.cog.intents_add.callback(self.cog, ctx, "rant", "🔴", rest="Rant / No Advice | Just venting.")
