@@ -669,13 +669,19 @@ class EphemeralVents(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     @commands.group(name="ventset", invoke_without_command=True)
     async def ventset(self, ctx: commands.Context) -> None:
-        """Configure EphemeralVents settings and options."""
+        """Configure EphemeralVents.
+
+        Configure settings, timeouts, intents, and channels for ephemeral vents.
+        """
         if ctx.invoked_subcommand is None:
             await self.show_settings(ctx)
 
     @ventset.command(name="show")
     async def ventset_show(self, ctx: commands.Context) -> None:
-        """Display current EphemeralVents configuration settings."""
+        """Show current settings.
+
+        Display current EphemeralVents configuration settings.
+        """
         await self.show_settings(ctx)
 
     async def show_settings(self, ctx: commands.Context) -> None:
@@ -758,14 +764,21 @@ class EphemeralVents(commands.Cog):
 
     @ventset.command(name="help", aliases=["subcommands", "commands"])
     async def ventset_help(self, ctx: commands.Context) -> None:
-        """List all available ventset subcommands and usage."""
+        """List ventset subcommands.
+
+        Display all available ventset subcommands and their usage.
+        """
         await ctx.send_help(self.ventset)
 
     @ventset.command(name="channel")
     async def ventset_channel(
         self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None
     ) -> None:
-        """Set or clear the vent hub launcher channel."""
+        """Set or clear vent hub channel.
+
+        Set the vent hub launcher channel and post the launcher embed,
+        or pass no channel to clear and disable it.
+        """
         if channel is None:
             await self.config.guild(ctx.guild).hub_channel_id.set(None)
             await ctx.send("✅ Vent hub channel has been cleared and disabled.")
@@ -816,7 +829,10 @@ class EphemeralVents(commands.Cog):
     async def ventset_modrole(
         self, ctx: commands.Context, role: Optional[discord.Role] = None
     ) -> None:
-        """Set or clear the moderator role for vent moderation."""
+        """Set or clear moderator role.
+
+        Configure the role allowed to moderate vents and access archives.
+        """
         if role is None:
             await self.config.guild(ctx.guild).mod_role_id.set(None)
             await ctx.send("✅ Moderator role cleared. Only users with 'Manage Channels' can moderate vents.")
@@ -829,7 +845,10 @@ class EphemeralVents(commands.Cog):
     async def ventset_archivecategory(
         self, ctx: commands.Context, category: Optional[discord.CategoryChannel] = None
     ) -> None:
-        """Set an optional category to move archived channels to, or clear."""
+        """Set or clear archive category.
+
+        Configure an optional category to move archived vent channels into.
+        """
         if category is None:
             await self.config.guild(ctx.guild).archive_category_id.set(None)
             await ctx.send("✅ Archive category reset to None. Archived vents will remain in their original category.")
@@ -849,7 +868,10 @@ class EphemeralVents(commands.Cog):
     async def ventset_timeouts(
         self, ctx: commands.Context, inactivity_hours: float, lifespan_hours: float
     ) -> None:
-        """Set the inactivity lock and lifespan hard cap durations in hours."""
+        """Set vent timeouts.
+
+        Set inactivity lock and lifespan hard cap durations in hours.
+        """
         if inactivity_hours <= 0.0 or lifespan_hours <= 0.0:
             await ctx.send("❌ Timeout durations must be greater than 0 hours.")
             return
@@ -866,7 +888,10 @@ class EphemeralVents(commands.Cog):
     async def ventset_action(
         self, ctx: commands.Context, action: Literal["archive", "delete"]
     ) -> None:
-        """Set the post-expiration action to either 'archive' or 'delete'."""
+        """Set expiration action.
+
+        Set the post-expiration action to either 'archive' or 'delete'.
+        """
         act = action.lower()
         if act not in ("archive", "delete"):
             await ctx.send("❌ Action must be either `archive` or `delete`.")
@@ -877,7 +902,10 @@ class EphemeralVents(commands.Cog):
 
     @ventset.command(name="crisis")
     async def ventset_crisis(self, ctx: commands.Context, *, text: str) -> None:
-        """Update or reset the crisis support header text (use 'reset' for default)."""
+        """Set crisis support header.
+
+        Update or reset the crisis support header text ('reset' for default).
+        """
         if text.strip().lower() == "reset":
             await self.config.guild(ctx.guild).crisis_header.set(DEFAULT_CRISIS_HEADER)
             await ctx.send("✅ Crisis support header text has been restored to default.")
@@ -892,13 +920,19 @@ class EphemeralVents(commands.Cog):
 
     @ventset.group(name="intents", invoke_without_command=True)
     async def ventset_intents(self, ctx: commands.Context) -> None:
-        """Manage interaction intent tags."""
+        """Manage vent intent tags.
+
+        Manage interaction intent tags available to users.
+        """
         if ctx.invoked_subcommand is None:
             await self.intents_list(ctx)
 
     @ventset_intents.command(name="list")
     async def intents_list(self, ctx: commands.Context) -> None:
-        """List all configured interaction intent profiles."""
+        """List configured intents.
+
+        List all configured interaction intent profiles and boundaries.
+        """
         intents = await self.config.guild(ctx.guild).intents()
         if not intents:
             await ctx.send("No intents are currently configured.")
@@ -957,15 +991,19 @@ class EphemeralVents(commands.Cog):
 
     @ventset_intents.command(name="help", aliases=["subcommands", "commands"])
     async def intents_help(self, ctx: commands.Context) -> None:
-        """List all available intents subcommands and usage."""
+        """List intents subcommands.
+
+        Display all available intents subcommands and their usage.
+        """
         await ctx.send_help(self.ventset_intents)
 
     @ventset_intents.command(name="add", usage="<slug> <emoji> <label> | <header_note>")
     async def intents_add(
         self, ctx: commands.Context, slug: str, emoji: str, *, rest: str
     ) -> None:
-        """Add or update a custom intent tag.
+        """Add or update an intent.
 
+        Add or update a custom intent tag.
         Use a pipe `|` to separate the label and header note.
         Example: `[p]ventset intents add rant 🔴 Just Ranting | The author wants to vent without advice.`
         """
@@ -1021,7 +1059,10 @@ class EphemeralVents(commands.Cog):
 
     @ventset_intents.command(name="remove")
     async def intents_remove(self, ctx: commands.Context, slug: str) -> None:
-        """Delete an intent tag (minimum 1 intent required)."""
+        """Delete an intent tag.
+
+        Delete an intent tag by slug (minimum 1 intent required).
+        """
         clean_slug = slug.strip().lower()
         intents = await self.config.guild(ctx.guild).intents()
 
@@ -1040,7 +1081,10 @@ class EphemeralVents(commands.Cog):
 
     @ventset_intents.command(name="reset")
     async def intents_reset(self, ctx: commands.Context) -> None:
-        """Restore configured intents to the 5 default emoji presets."""
+        """Reset intents to presets.
+
+        Restore configured intents to the 5 default emoji presets.
+        """
         await self.config.guild(ctx.guild).intents.set(DEFAULT_INTENTS)
         await ctx.send("✅ Configured intents have been reset to the 5 default presets (🟠, 🟡, 🟢, 🔵, 🟣).")
 
