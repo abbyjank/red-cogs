@@ -143,31 +143,31 @@ class TestConstantsAndNaming(unittest.TestCase):
         # Standard colour emoji prefix
         self.assertEqual(
             format_archived_channel_name("vent-🟡-abby"),
-            "♻️-abby",
+            "📦-abby",
         )
         self.assertEqual(
             format_archived_channel_name("vent-🟠-rough-day"),
-            "♻️-rough-day",
+            "📦-rough-day",
         )
         # Custom emoji prefix
         self.assertEqual(
             format_archived_channel_name("vent-heart-sadness"),
-            "♻️-sadness",
+            "📦-sadness",
         )
         # Simple vent-prefix with single hyphen
         self.assertEqual(
             format_archived_channel_name("vent-abby"),
-            "♻️-abby",
+            "📦-abby",
         )
         # Channel not matching vent-prefix
         self.assertEqual(
             format_archived_channel_name("general-chat"),
-            "♻️-general-chat",
+            "📦-general-chat",
         )
         # Custom archive emoji
         self.assertEqual(
-            format_archived_channel_name("vent-🟡-abby", archive_emoji="📦"),
-            "📦-abby",
+            format_archived_channel_name("vent-🟡-abby", archive_emoji="📁"),
+            "📁-abby",
         )
         # Custom emoji as archive emoji
         self.assertEqual(
@@ -176,14 +176,14 @@ class TestConstantsAndNaming(unittest.TestCase):
         )
         # Already archived channel should not re-prefix
         self.assertEqual(
-            format_archived_channel_name("♻️-abby"),
-            "♻️-abby",
+            format_archived_channel_name("📦-abby"),
+            "📦-abby",
         )
         # Channel name length capped at 100
         long_name = "vent-🟡-" + ("a" * 150)
         archived_long = format_archived_channel_name(long_name)
         self.assertLessEqual(len(archived_long), 100)
-        self.assertTrue(archived_long.startswith("♻️-"))
+        self.assertTrue(archived_long.startswith("📦-"))
         self.assertFalse(archived_long.endswith("-"))
 
 
@@ -414,7 +414,7 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         channel.set_permissions.assert_awaited()
         # Channel should be renamed with archive prefix
         channel.edit.assert_awaited()
-        self.assertEqual(channel.edit.await_args.kwargs["name"], "♻️-sadness")
+        self.assertEqual(channel.edit.await_args.kwargs["name"], "📦-sadness")
         # Notice with ArchivedVentView should be sent
         channel.send.assert_awaited()
 
@@ -581,7 +581,7 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         await self.cog.close_vent_channel(channel, closed_by=closer)
         channel.set_permissions.assert_awaited()
         channel.edit.assert_awaited()
-        self.assertEqual(channel.edit.await_args.kwargs["name"], "♻️-abby")
+        self.assertEqual(channel.edit.await_args.kwargs["name"], "📦-abby")
         self.assertNotIn(9999, self.cog._active_channel_ids)
 
     async def test_on_message_listener(self):
@@ -696,8 +696,8 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.cog.config.guild(self.guild).mod_role_id())
 
         # 4b. Archive emoji command
-        await self.cog.ventset_archiveemoji.callback(self.cog, ctx, "📦")
-        self.assertEqual(await self.cog.config.guild(self.guild).archive_emoji(), "📦")
+        await self.cog.ventset_archiveemoji.callback(self.cog, ctx, "📁")
+        self.assertEqual(await self.cog.config.guild(self.guild).archive_emoji(), "📁")
         await self.cog.ventset_archiveemoji.callback(self.cog, ctx, None)
         self.assertEqual(await self.cog.config.guild(self.guild).archive_emoji(), DEFAULT_ARCHIVE_EMOJI)
 

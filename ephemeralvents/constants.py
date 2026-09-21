@@ -44,7 +44,7 @@ DEFAULT_CRISIS_HEADER: str = (
     "⚠️ *This space is for peer support only and is not a substitute for professional help. Please respect the author's interaction boundaries.*"
 )
 
-DEFAULT_ARCHIVE_EMOJI: str = "♻️"
+DEFAULT_ARCHIVE_EMOJI: str = "📦"
 
 DEFAULT_GUILD: Dict[str, Any] = {
     "hub_channel_id": None,

@@ -84,10 +84,10 @@ def format_archived_channel_name(
     """Format channel name for archived status by replacing 'vent-<emoji>-' with archive emoji.
 
     Examples:
-        'vent-🟡-abby' -> '♻️-abby'
-        'vent-🟠-rough-day' -> '♻️-rough-day'
-        'vent-heart-sadness' -> '♻️-sadness'
-        'vent-abby' -> '♻️-abby'
+        'vent-🟡-abby' -> '📦-abby'
+        'vent-🟠-rough-day' -> '📦-rough-day'
+        'vent-heart-sadness' -> '📦-sadness'
+        'vent-abby' -> '📦-abby'
     """
     clean_name = channel_name.strip()
     custom_match = re.match(r"<a?:([a-zA-Z0-9_]+):\d+>", archive_emoji)
@@ -956,8 +956,8 @@ class EphemeralVents(commands.Cog):
     ) -> None:
         """Set archive prefix emoji.
 
-        Set the emoji prefix used when renaming archived channels (e.g. '♻️' or '📦').
-        Pass no emoji to reset to default ('♻️').
+        Set the emoji prefix used when renaming archived channels (e.g. '📦' or '📁').
+        Pass no emoji to reset to default ('📦').
         """
         if not emoji:
             await self.config.guild(ctx.guild).archive_emoji.set(DEFAULT_ARCHIVE_EMOJI)

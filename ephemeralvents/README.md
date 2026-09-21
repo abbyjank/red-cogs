@@ -33,7 +33,7 @@ Channels are automatically monitored and locked upon inactivity, and subsequentl
   - **Inactivity Lock**: Locks `@everyone` (`send_messages=False`) and posts a notice when a channel reaches the inactivity duration (default: 12 hours).
   - **Lifespan Hard Cap**: Once locked, transitions channel according to `post_action` after the hard cap duration (default: 24 hours).
   - **Archival or Deletion**:
-    - `archive`: Renames channel to an archived prefix (e.g. `vent-🟡-abby` becomes `♻️-abby`), hides channel from `@everyone` (`view_channel=False`), grants read-only access to moderators, optionally moves to an archive category, and posts a moderator deletion button.
+    - `archive`: Renames channel to an archived prefix (e.g. `vent-🟡-abby` becomes `📦-abby`), hides channel from `@everyone` (`view_channel=False`), grants read-only access to moderators, optionally moves to an archive category, and posts a moderator deletion button.
     - `delete`: Permanently deletes the channel and prunes configuration metadata.
 - **Manual Closure**:
   - Clicking `Close Vent` immediately locks the channel and triggers the configured post-action (archive or delete).
@@ -52,7 +52,7 @@ All administrative settings are managed under the `[p]ventset` command group, re
 | `[p]ventset channel [#channel]` | Set the vent hub launcher channel and post the launcher embed (or clear if no channel given). |
 | `[p]ventset modrole [@role]` | Set or clear the moderator role for vent oversight and archive access. |
 | `[p]ventset archivecategory [category]` | Set or clear an optional category to move archived vent channels into. |
-| `[p]ventset archiveemoji [emoji]` | Set or reset the prefix emoji used when renaming archived channels (default: `♻️`). |
+| `[p]ventset archiveemoji [emoji]` | Set or reset the prefix emoji used when renaming archived channels (default: `📦`). |
 | `[p]ventset timeouts <inactivity_hours> <lifespan_hours>` | Set the inactivity lock and hard cap lifespan durations (default: `12` and `24`). |
 | `[p]ventset action <archive\|delete>` | Toggle post-expiration action between `archive` and `delete`. |
 | `[p]ventset crisis [text]` | View current crisis text (bare command), update text, restore default (`reset`), or disable/remove (`off`/`clear`). |
