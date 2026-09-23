@@ -512,19 +512,47 @@ class EphemeralVents(commands.Cog):
             fallback_name = author.display_name or author.name
             channel_name = sanitize_channel_name(intent_emoji, clean_topic, fallback_name)
 
-            # Sync base permissions from the category
+            # Inherit base permissions from parent category and vent hub channel
             overwrites: Dict[
                 Union[discord.Role, discord.Member], discord.PermissionOverwrite
             ] = {}
-            if parent_category:
-                overwrites = parent_category.overwrites.copy()
+            if parent_category and isinstance(parent_category.overwrites, dict):
+                for target, ow in parent_category.overwrites.items():
+                    if hasattr(ow, "pair"):
+                        overwrites[target] = discord.PermissionOverwrite.from_pair(*ow.pair())
+            if hub_channel and isinstance(hub_channel.overwrites, dict):
+                for target, ow in hub_channel.overwrites.items():
+                    if hasattr(ow, "pair"):
+                        overwrites[target] = discord.PermissionOverwrite.from_pair(*ow.pair())
 
-            # Ensure @everyone has view_channel=True and send_messages=True
+            # Evaluate @everyone overwrite
             everyone_role = guild.default_role
             everyone_ow = overwrites.get(everyone_role, discord.PermissionOverwrite())
-            everyone_ow.view_channel = True
-            everyone_ow.send_messages = True
+            if everyone_ow.view_channel is False:
+                # Hub channel has explicitly hidden vents from @everyone (e.g. opt-in role setup)
+                everyone_ow.send_messages = False
+            else:
+                # Default server setup: vent is publicly accessible to all server members
+                everyone_ow.view_channel = True
+                everyone_ow.send_messages = True
             overwrites[everyone_role] = everyone_ow
+
+            # For any roles/members explicitly granted view_channel=True on hub channel,
+            # ensure they can also send messages and read history in the active vent
+            # (since hub channel is often configured as read-only with send_messages=False)
+            for target, ow in list(overwrites.items()):
+                if target != everyone_role and ow.view_channel is True:
+                    ow.send_messages = True
+                    ow.read_message_history = True
+
+            # Ensure the author always has explicit view and messaging access to their own vent
+            author_ow = overwrites.get(author, discord.PermissionOverwrite())
+            author_ow.view_channel = True
+            author_ow.send_messages = True
+            author_ow.read_message_history = True
+            author_ow.embed_links = True
+            author_ow.attach_files = True
+            overwrites[author] = author_ow
 
             # Ensure the bot itself has all necessary permissions
             bot_ow = overwrites.get(guild.me, discord.PermissionOverwrite())
@@ -534,6 +562,7 @@ class EphemeralVents(commands.Cog):
             bot_ow.manage_messages = True
             bot_ow.embed_links = True
             bot_ow.read_message_history = True
+            bot_ow.attach_files = True
             overwrites[guild.me] = bot_ow
 
             # Ensure configured mod role has visibility and messaging
@@ -644,6 +673,30 @@ class EphemeralVents(commands.Cog):
         guild = channel.guild
         everyone_role = guild.default_role
 
+        guild_config = self.config.guild(guild)
+        mod_role_id = await guild_config.mod_role_id()
+
+        # Lock send_messages for all non-bot, non-mod roles and members
+        if isinstance(channel.overwrites, dict):
+            for target in list(channel.overwrites.keys()):
+                if target == guild.me:
+                    continue
+                if mod_role_id and isinstance(target, discord.Role) and target.id == mod_role_id:
+                    continue
+                try:
+                    ow = channel.overwrites_for(target)
+                    ow.send_messages = False
+                    await channel.set_permissions(
+                        target,
+                        overwrite=ow,
+                        reason="Ephemeral vent inactivity lock triggered",
+                    )
+                except discord.Forbidden:
+                    log.warning(f"Forbidden while setting lock overwrite on channel {channel.id}")
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
         try:
             everyone_ow = channel.overwrites_for(everyone_role)
             everyone_ow.send_messages = False
@@ -652,9 +705,8 @@ class EphemeralVents(commands.Cog):
                 overwrite=everyone_ow,
                 reason="Ephemeral vent inactivity lock triggered",
             )
-        except discord.Forbidden:
-            log.warning(f"Forbidden while setting lock overwrite on channel {channel.id}")
-            return
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
 
         display_hours = (
             int(inactivity_hours) if inactivity_hours.is_integer() else f"{inactivity_hours:g}"
@@ -683,14 +735,29 @@ class EphemeralVents(commands.Cog):
         guild_config = self.config.guild(guild)
         everyone_role = guild.default_role
 
-        # 1. Restrict read access: set @everyone view_channel=False and send_messages=False
+        # 1. Restrict read access: set view_channel=False and send_messages=False for all non-mod/bot overwrites
+        mod_role_id = await guild_config.mod_role_id()
+        if isinstance(channel.overwrites, dict):
+            for target in list(channel.overwrites.keys()):
+                if target == guild.me:
+                    continue
+                if mod_role_id and isinstance(target, discord.Role) and target.id == mod_role_id:
+                    continue
+                try:
+                    ow = channel.overwrites_for(target)
+                    ow.view_channel = False
+                    ow.send_messages = False
+                    await channel.set_permissions(target, overwrite=ow, reason=reason)
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                    pass
+
         try:
             everyone_ow = channel.overwrites_for(everyone_role)
             everyone_ow.view_channel = False
             everyone_ow.send_messages = False
             await channel.set_permissions(everyone_role, overwrite=everyone_ow, reason=reason)
-        except discord.Forbidden:
-            log.warning(f"Forbidden while setting @everyone overwrite in {channel.id}")
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
 
         # 2. Grant view_channel=True, read_message_history=True, send_messages=False to mod_role_id
         mod_role_id = await guild_config.mod_role_id()
@@ -802,7 +869,26 @@ class EphemeralVents(commands.Cog):
         guild = channel.guild
         everyone_role = guild.default_role
 
-        # Immediately lock channel
+        # Immediately lock channel for non-mod, non-bot targets
+        guild_config = self.config.guild(guild)
+        mod_role_id = await guild_config.mod_role_id()
+        if isinstance(channel.overwrites, dict):
+            for target in list(channel.overwrites.keys()):
+                if target == guild.me:
+                    continue
+                if mod_role_id and isinstance(target, discord.Role) and target.id == mod_role_id:
+                    continue
+                try:
+                    ow = channel.overwrites_for(target)
+                    ow.send_messages = False
+                    await channel.set_permissions(
+                        target,
+                        overwrite=ow,
+                        reason=f"Vent closed by {closed_by} ({closed_by.id})",
+                    )
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                    pass
+
         try:
             everyone_ow = channel.overwrites_for(everyone_role)
             everyone_ow.send_messages = False
@@ -811,7 +897,7 @@ class EphemeralVents(commands.Cog):
                 overwrite=everyone_ow,
                 reason=f"Vent closed by {closed_by} ({closed_by.id})",
             )
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
 
         post_action = await self.config.guild(guild).post_action()

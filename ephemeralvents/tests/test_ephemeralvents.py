@@ -590,6 +590,66 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         field_names = [f.name for f in sent_embed.fields]
         self.assertNotIn("Crisis & Peer Support Resources", field_names)
 
+    async def test_create_vent_channel_inherits_hub_channel_permissions(self):
+        """When hub_channel has role-based opt-in (e.g. serious role allowed, @everyone denied),
+        the created vent channel inherits these permissions from the hub channel."""
+        author = MagicMock(spec=discord.Member)
+        author.id = 777
+        author.display_name = "Sam"
+        author.mention = "<@777>"
+
+        serious_role = MagicMock(spec=discord.Role)
+        serious_role.id = 8888
+
+        everyone_ow = discord.PermissionOverwrite(view_channel=False, send_messages=False)
+        serious_ow = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+
+        hub_channel = MagicMock(spec=discord.TextChannel)
+        hub_channel.category = None
+        hub_channel.overwrites = {
+            self.guild.default_role: everyone_ow,
+            serious_role: serious_ow,
+        }
+        self.guild.get_channel.return_value = hub_channel
+
+        created_channel = MagicMock(spec=discord.TextChannel)
+        created_channel.id = 9999
+        created_channel.send = AsyncMock()
+        pin_msg = MagicMock()
+        pin_msg.pin = AsyncMock()
+        created_channel.send.return_value = pin_msg
+
+        async def empty_history(*args, **kwargs):
+            if False:
+                yield None
+
+        created_channel.history.return_value = empty_history()
+        self.guild.create_text_channel = AsyncMock(return_value=created_channel)
+
+        await self.cog.config.guild(self.guild).hub_channel_id.set(1234)
+
+        await self.cog.create_vent_channel(
+            guild=self.guild,
+            author=author,
+            intent_key="open",
+            topic="Serious Vent",
+        )
+
+        call_kwargs = self.guild.create_text_channel.await_args.kwargs
+        overwrites = call_kwargs["overwrites"]
+
+        # @everyone should remain hidden and unable to send
+        self.assertFalse(overwrites[self.guild.default_role].view_channel)
+        self.assertFalse(overwrites[self.guild.default_role].send_messages)
+
+        # serious_role should be able to view AND send messages
+        self.assertTrue(overwrites[serious_role].view_channel)
+        self.assertTrue(overwrites[serious_role].send_messages)
+
+        # author should have view and send permissions
+        self.assertTrue(overwrites[author].view_channel)
+        self.assertTrue(overwrites[author].send_messages)
+
     async def test_close_vent_channel_manual(self):
         """Test manual close transitions to archive or delete."""
         channel = MagicMock(spec=discord.TextChannel)
