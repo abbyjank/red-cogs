@@ -19,13 +19,17 @@ from redbot.core import Config, commands
 from redbot.core.bot import Red
 
 from .constants import (
+    CLOSE_BUTTON_ID,
     CONFIG_IDENTIFIER,
     DEFAULT_ARCHIVE_EMOJI,
     DEFAULT_CRISIS_HEADER,
     DEFAULT_EMBED_COLOR,
     DEFAULT_GUILD,
     DEFAULT_INTENTS,
+    DELETE_BUTTON_ID,
     INTENT_COLORS,
+    LAUNCHER_BUTTON_ID,
+    LEGACY_DELETE_BUTTON_ID,
     MAX_SLUG_LENGTH,
 )
 from .views import (
@@ -132,14 +136,41 @@ class EphemeralVents(commands.Cog):
         self._guild_locks: Dict[int, asyncio.Lock] = {}
         # Concurrency locks per guild for serializing hub index message updates
         self._index_update_locks: Dict[int, asyncio.Lock] = {}
+        # Registered persistent views tracked for lifecycle cleanup
+        self._registered_views: List[discord.ui.View] = []
 
     async def cog_load(self) -> None:
         """Register persistent views, load active channels cache, and start background loop."""
+        # Clean up any stale EphemeralVents views in ViewStore from previous loads/reloads
+        view_store = getattr(getattr(self.bot, "_connection", None), "_view_store", None)
+        if view_store:
+            ephemeral_custom_ids = {
+                LAUNCHER_BUTTON_ID,
+                CLOSE_BUTTON_ID,
+                DELETE_BUTTON_ID,
+                LEGACY_DELETE_BUTTON_ID,
+            }
+            views_to_stop = []
+            for msg_id, items in list(getattr(view_store, "_views", {}).items()):
+                for (ctype, cid), item in list(items.items()):
+                    if cid in ephemeral_custom_ids:
+                        if item.view and item.view not in views_to_stop:
+                            views_to_stop.append(item.view)
+            for v in views_to_stop:
+                try:
+                    v.stop()
+                except Exception as e:
+                    log.debug(f"Error stopping stale view {v}: {e}")
+
         # Persistent UI views for Discord.py 2.x
-        self.bot.add_view(VentLauncherView(self))
-        self.bot.add_view(CloseVentView(self))
-        self.bot.add_view(ArchivedVentView(self))
-        self.bot.add_view(LegacyArchivedVentView(self))
+        launcher_view = VentLauncherView(self)
+        close_view = CloseVentView(self)
+        archived_view = ArchivedVentView(self)
+        legacy_view = LegacyArchivedVentView(self)
+
+        self._registered_views = [launcher_view, close_view, archived_view, legacy_view]
+        for v in self._registered_views:
+            self.bot.add_view(v)
 
         # Populate active channel cache from Config and migrate legacy crisis header
         try:
@@ -173,8 +204,13 @@ class EphemeralVents(commands.Cog):
         self.cleanup_loop.start()
 
     def cog_unload(self) -> None:
-        """Cancel background tasks when the cog unloads."""
+        """Cancel background tasks and stop persistent views when the cog unloads."""
         self.cleanup_loop.cancel()
+        for v in getattr(self, "_registered_views", []):
+            try:
+                v.stop()
+            except Exception as e:
+                log.debug(f"Error stopping view on cog unload: {e}")
 
     def _get_guild_lock(self, guild_id: int) -> asyncio.Lock:
         """Retrieve or create an asyncio lock for a guild."""
@@ -273,6 +309,7 @@ class EphemeralVents(commands.Cog):
         vent_data = active_vents.get(str(channel.id))
         if vent_data and vent_data.get("author_id") == member.id:
             return True
+        return await self.can_moderate_vent(guild, member, channel)
 
     async def build_hub_index_embed(self, guild: discord.Guild) -> discord.Embed:
         """Construct the live active vents index embed for the hub channel."""

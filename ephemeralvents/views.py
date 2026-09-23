@@ -33,12 +33,33 @@ def _create_tracked_task(coro: Coroutine) -> asyncio.Task:
     return task
 
 
+def resolve_cog(
+    interaction: discord.Interaction, fallback_cog: EphemeralVents
+) -> EphemeralVents:
+    """Dynamically resolve the active EphemeralVents cog instance."""
+    try:
+        if interaction.client:
+            active_cog = interaction.client.get_cog("EphemeralVents")
+            if (
+                active_cog is not None
+                and getattr(active_cog, "__class__", None).__name__ == "EphemeralVents"
+            ):
+                return active_cog
+    except Exception:
+        pass
+    return fallback_cog
+
+
 class VentLauncherView(discord.ui.View):
     """Persistent view placed on the vent hub launcher message."""
 
     def __init__(self, cog: EphemeralVents) -> None:
         super().__init__(timeout=None)
         self.cog = cog
+
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
 
     @discord.ui.button(
         label="Start a Vent",
@@ -66,8 +87,10 @@ class VentLauncherView(discord.ui.View):
             )
             return
 
+        cog = self._get_cog(interaction)
+
         # Rate limit: 1 active vent per user
-        has_active, existing_channel = await self.cog.check_user_vent_rate_limit(
+        has_active, existing_channel = await cog.check_user_vent_rate_limit(
             guild, interaction.user
         )
         if has_active:
@@ -81,7 +104,7 @@ class VentLauncherView(discord.ui.View):
             )
             return
 
-        modal = VentTopicModal(self.cog)
+        modal = VentTopicModal(cog)
         await interaction.response.send_modal(modal)
 
 
@@ -91,6 +114,10 @@ class VentTopicModal(discord.ui.Modal, title="Start a Vent"):
     def __init__(self, cog: EphemeralVents) -> None:
         super().__init__(timeout=300.0)
         self.cog = cog
+
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
 
     topic_input = discord.ui.TextInput(
         label="Topic / Title",
@@ -110,8 +137,10 @@ class VentTopicModal(discord.ui.Modal, title="Start a Vent"):
             )
             return
 
+        cog = self._get_cog(interaction)
+
         # Re-check rate limit in case of rapid submissions
-        has_active, existing_channel = await self.cog.check_user_vent_rate_limit(
+        has_active, existing_channel = await cog.check_user_vent_rate_limit(
             guild, interaction.user
         )
         if has_active:
@@ -129,12 +158,12 @@ class VentTopicModal(discord.ui.Modal, title="Start a Vent"):
         clean_topic = raw_topic.strip()
 
         # Fetch guild's configured intents
-        intents: Dict[str, Dict[str, str]] = await self.cog.config.guild(guild).intents()
+        intents: Dict[str, Dict[str, str]] = await cog.config.guild(guild).intents()
         if not intents:
             from .constants import DEFAULT_INTENTS
             intents = DEFAULT_INTENTS
 
-        view = IntentSelectView(self.cog, topic=clean_topic, intents=intents)
+        view = IntentSelectView(cog, topic=clean_topic, intents=intents)
         await interaction.response.send_message(
             "Please select your interaction intent below to create your vent channel:",
             view=view,
@@ -176,6 +205,10 @@ class IntentSelect(discord.ui.Select):
             options=options,
         )
 
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
+
     async def callback(self, interaction: discord.Interaction) -> None:
         """Handle intent selection and trigger channel creation."""
         guild = interaction.guild
@@ -200,9 +233,10 @@ class IntentSelect(discord.ui.Select):
             await interaction.response.defer(ephemeral=True)
 
         selected_slug = self.values[0]
+        cog = self._get_cog(interaction)
 
         try:
-            channel = await self.cog.create_vent_channel(
+            channel = await cog.create_vent_channel(
                 guild=guild,
                 author=interaction.user,
                 intent_key=selected_slug,
@@ -270,6 +304,10 @@ class CloseVentView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
+
     @discord.ui.button(
         label="Close Vent",
         style=discord.ButtonStyle.danger,
@@ -293,7 +331,9 @@ class CloseVentView(discord.ui.View):
             )
             return
 
-        can_close = await self.cog.can_close_vent(guild, interaction.user, channel)
+        cog = self._get_cog(interaction)
+
+        can_close = await cog.can_close_vent(guild, interaction.user, channel)
         if not can_close:
             await interaction.response.send_message(
                 "Only the vent author or moderators can close this vent.",
@@ -302,7 +342,7 @@ class CloseVentView(discord.ui.View):
             return
 
         await interaction.response.defer()
-        await self.cog.close_vent_channel(channel, closed_by=interaction.user)
+        await cog.close_vent_channel(channel, closed_by=interaction.user)
 
 
 class ArchivedVentView(discord.ui.View):
@@ -311,6 +351,10 @@ class ArchivedVentView(discord.ui.View):
     def __init__(self, cog: EphemeralVents) -> None:
         super().__init__(timeout=None)
         self.cog = cog
+
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
 
     @discord.ui.button(
         label="Delete Vent Channel",
@@ -335,7 +379,9 @@ class ArchivedVentView(discord.ui.View):
             )
             return
 
-        can_moderate = await self.cog.can_moderate_vent(guild, interaction.user, channel)
+        cog = self._get_cog(interaction)
+
+        can_moderate = await cog.can_moderate_vent(guild, interaction.user, channel)
         if not can_moderate:
             await interaction.response.send_message(
                 "Only moderators can delete this archived vent channel.",
@@ -347,7 +393,7 @@ class ArchivedVentView(discord.ui.View):
             "Deleting vent channel...",
             ephemeral=True,
         )
-        await self.cog.delete_vent_channel(
+        await cog.delete_vent_channel(
             channel,
             reason=f"Archived vent deleted by moderator {interaction.user} ({interaction.user.id})",
         )
@@ -359,6 +405,10 @@ class LegacyArchivedVentView(discord.ui.View):
     def __init__(self, cog: EphemeralVents) -> None:
         super().__init__(timeout=None)
         self.cog = cog
+
+    def _get_cog(self, interaction: discord.Interaction) -> EphemeralVents:
+        """Dynamically resolve the active EphemeralVents cog instance."""
+        return resolve_cog(interaction, self.cog)
 
     @discord.ui.button(
         label="Delete Vent Channel",
@@ -383,7 +433,9 @@ class LegacyArchivedVentView(discord.ui.View):
             )
             return
 
-        can_moderate = await self.cog.can_moderate_vent(guild, interaction.user, channel)
+        cog = self._get_cog(interaction)
+
+        can_moderate = await cog.can_moderate_vent(guild, interaction.user, channel)
         if not can_moderate:
             await interaction.response.send_message(
                 "Only moderators can delete this archived vent channel.",
@@ -395,7 +447,7 @@ class LegacyArchivedVentView(discord.ui.View):
             "Deleting vent channel...",
             ephemeral=True,
         )
-        await self.cog.delete_vent_channel(
+        await cog.delete_vent_channel(
             channel,
             reason=f"Archived vent deleted by moderator {interaction.user} ({interaction.user.id})",
         )

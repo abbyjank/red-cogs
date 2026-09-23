@@ -225,6 +225,23 @@ class TestViewsAndModals(unittest.TestCase):
         values = [opt.value for opt in select.options]
         self.assertEqual(values, ["advice", "comfort", "relate", "gentle", "open"])
 
+    def test_resolve_cog_dynamic(self):
+        """Verify resolve_cog dynamically returns the active registered EphemeralVents cog."""
+        from ephemeralvents.views import resolve_cog
+
+        # Fallback when interaction.client has no valid cog
+        mock_interaction = MagicMock(spec=discord.Interaction)
+        mock_interaction.client.get_cog.return_value = None
+        resolved = resolve_cog(mock_interaction, self.cog)
+        self.assertIs(resolved, self.cog)
+
+        # Resolves active cog when matching class name is present
+        active_cog = MagicMock()
+        active_cog.__class__.__name__ = "EphemeralVents"
+        mock_interaction.client.get_cog.return_value = active_cog
+        resolved = resolve_cog(mock_interaction, self.cog)
+        self.assertIs(resolved, active_cog)
+
 
 class TestCogLogic(unittest.IsolatedAsyncioTestCase):
     """Async tests for rate limiting, permissions, and lifecycle processing."""
@@ -335,6 +352,22 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
 
         can_close = await self.cog.can_close_vent(self.guild, member, channel)
         self.assertFalse(can_close)
+
+    async def test_can_close_vent_moderator(self):
+        """Moderator can close someone else's vent channel."""
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 777
+        channel.permissions_for.return_value.manage_channels = False
+        member = MagicMock(spec=discord.Member)
+        member.id = 999  # Not author
+        member.guild_permissions.administrator = True
+        member.guild_permissions.manage_channels = True
+
+        async with self.cog.config.guild(self.guild).active_vents() as vents:
+            vents["777"] = {"author_id": 888}
+
+        can_close = await self.cog.can_close_vent(self.guild, member, channel)
+        self.assertTrue(can_close)
 
     async def test_can_moderate_with_mod_role(self):
         """Member with configured mod_role_id can moderate vents."""
@@ -1032,6 +1065,29 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         vents_after = await self.cog.config.guild(self.guild).active_vents()
         self.assertNotIn("3333", vents_after)
         self.assertNotIn(3333, self.cog._active_channel_ids)
+
+    async def test_cog_load_and_unload_stops_views(self):
+        """Verify cog_load tracks registered views and cog_unload calls stop() on them."""
+        # Mock view store with a dummy existing view
+        fake_view = MagicMock(spec=discord.ui.View)
+        fake_item = MagicMock()
+        fake_item.view = fake_view
+        view_store = MagicMock()
+        view_store._views = {None: {(2, LAUNCHER_BUTTON_ID): fake_item}}
+        self.bot._connection = MagicMock()
+        self.bot._connection._view_store = view_store
+
+        await self.cog.cog_load()
+        fake_view.stop.assert_called_once()
+        self.assertEqual(len(self.cog._registered_views), 4)
+
+        # Mock stop on registered views
+        for v in self.cog._registered_views:
+            v.stop = MagicMock()
+
+        self.cog.cog_unload()
+        for v in self.cog._registered_views:
+            v.stop.assert_called_once()
 
 
 if __name__ == "__main__":
