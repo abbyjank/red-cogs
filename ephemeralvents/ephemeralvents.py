@@ -304,9 +304,15 @@ class EphemeralVents(commands.Cog):
                 ch_id = int(channel_id_str)
             except (ValueError, TypeError):
                 continue
-            ch = guild.get_channel(ch_id)
-            if ch is not None:
-                valid_vents.append((ch, vent_data))
+            ch = guild.get_channel(ch_id) or self.bot.get_channel(ch_id)
+            if ch is None:
+                try:
+                    ch = await self.bot.fetch_channel(ch_id)
+                except discord.NotFound:
+                    continue
+                except Exception:
+                    pass
+            valid_vents.append((ch_id, vent_data))
 
         # Sort by creation timestamp descending (newest first)
         valid_vents.sort(
@@ -328,7 +334,7 @@ class EphemeralVents(commands.Cog):
             return embed
 
         lines = []
-        for channel, vent_data in valid_vents:
+        for ch_id, vent_data in valid_vents:
             intent_key = vent_data.get("intent_key", "")
             intent_info = intents.get(intent_key, {})
             intent_emoji = intent_info.get("emoji", "💬")
@@ -347,7 +353,7 @@ class EphemeralVents(commands.Cog):
                 topic_disp = ""
 
             line = (
-                f"• {channel.mention}{topic_disp}\n"
+                f"• <#{ch_id}>{topic_disp}\n"
                 f"  └ {intent_emoji} **{intent_label}** • {status_badge} • Started <t:{created_at}:R>"
             )
             lines.append(line)
@@ -380,12 +386,26 @@ class EphemeralVents(commands.Cog):
             if not hub_channel_id:
                 return
 
-            hub_channel = guild.get_channel(hub_channel_id)
+            hub_channel = guild.get_channel(hub_channel_id) or self.bot.get_channel(hub_channel_id)
             if not isinstance(hub_channel, discord.TextChannel):
+                try:
+                    fetched = await self.bot.fetch_channel(hub_channel_id)
+                    hub_channel = fetched if isinstance(fetched, discord.TextChannel) else None
+                except Exception as e:
+                    log.warning(
+                        f"Could not fetch hub channel {hub_channel_id} in guild {guild.id}: {e}"
+                    )
+                    return
+
+            if not hub_channel:
+                log.warning(f"Hub channel {hub_channel_id} not found in guild {guild.id}")
                 return
 
             bot_perms = hub_channel.permissions_for(guild.me)
             if not (bot_perms.view_channel and bot_perms.send_messages and bot_perms.embed_links):
+                log.warning(
+                    f"Missing required permissions in hub channel {hub_channel.id} for guild {guild.id}"
+                )
                 return
 
             embed = await self.build_hub_index_embed(guild)
@@ -441,6 +461,9 @@ class EphemeralVents(commands.Cog):
             hub_channel = guild.get_channel(hub_channel_id) if hub_channel_id else None
             parent_category = hub_channel.category if hub_channel else None
 
+            # Normalize topic
+            clean_topic = topic.strip() if topic and topic.strip() else None
+
             # Retrieve intent profile
             intents = await guild_config.intents()
             intent_data = intents.get(intent_key, DEFAULT_INTENTS.get("open", {}))
@@ -450,7 +473,7 @@ class EphemeralVents(commands.Cog):
 
             # Sanitize channel name
             fallback_name = author.display_name or author.name
-            channel_name = sanitize_channel_name(intent_emoji, topic, fallback_name)
+            channel_name = sanitize_channel_name(intent_emoji, clean_topic, fallback_name)
 
             # Sync base permissions from the category
             overwrites: Dict[
@@ -506,14 +529,14 @@ class EphemeralVents(commands.Cog):
                 )
             embed_color = INTENT_COLORS.get(intent_key, DEFAULT_EMBED_COLOR)
 
-            title_text = f"{intent_emoji} Vent: {topic}" if topic else f"{intent_emoji} Vent Space"
+            title_text = f"{intent_emoji} Vent: {clean_topic}" if clean_topic else f"{intent_emoji} Vent Space"
             embed = discord.Embed(
                 title=title_text,
                 color=embed_color,
                 timestamp=discord.utils.utcnow(),
             )
-            if topic:
-                embed.add_field(name="Topic", value=topic, inline=False)
+            if clean_topic:
+                embed.add_field(name="Topic", value=clean_topic, inline=False)
 
             embed.add_field(
                 name=f"Interaction Boundary — {intent_label}",
@@ -562,7 +585,7 @@ class EphemeralVents(commands.Cog):
                 vents[str(channel.id)] = {
                     "author_id": author.id,
                     "intent_key": intent_key,
-                    "topic": topic,
+                    "topic": clean_topic,
                     "created_at": now,
                     "last_active_at": now,
                     "is_locked": False,

@@ -1,9 +1,17 @@
-"""EphemeralVents cog package setup."""
-
+import importlib
 import json
 from pathlib import Path
 
 from redbot.core.bot import Red
+
+from . import constants
+from . import views
+from . import ephemeralvents
+
+# Reload submodules so [p]reload and [p]cog update pick up all changes
+importlib.reload(constants)
+importlib.reload(views)
+importlib.reload(ephemeralvents)
 
 from .ephemeralvents import EphemeralVents
 
