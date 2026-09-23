@@ -48,6 +48,7 @@ DEFAULT_ARCHIVE_EMOJI: str = "📦"
 
 DEFAULT_GUILD: Dict[str, Any] = {
     "hub_channel_id": None,
+    "hub_index_message_id": None,
     "mod_role_id": None,
     "archive_category_id": None,
     "archive_emoji": DEFAULT_ARCHIVE_EMOJI,

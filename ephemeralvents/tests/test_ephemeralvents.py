@@ -48,6 +48,7 @@ class TestConstantsAndNaming(unittest.TestCase):
         """Verify DEFAULT_GUILD schema contains all required fields."""
         required_fields = [
             "hub_channel_id",
+            "hub_index_message_id",
             "mod_role_id",
             "archive_category_id",
             "archive_emoji",
@@ -631,6 +632,206 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         vents_after = await self.cog.config.guild(self.guild).active_vents()
         self.assertNotIn("2222", vents_after)
 
+    async def test_on_guild_channel_delete_hub_channel(self):
+        """Deleting the hub channel resets hub_channel_id and hub_index_message_id."""
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 5555
+        hub.guild = self.guild
+
+        await self.cog.config.guild(self.guild).hub_channel_id.set(5555)
+        await self.cog.config.guild(self.guild).hub_index_message_id.set(8888)
+
+        await self.cog.on_guild_channel_delete(hub)
+
+        self.assertIsNone(await self.cog.config.guild(self.guild).hub_channel_id())
+        self.assertIsNone(await self.cog.config.guild(self.guild).hub_index_message_id())
+
+    async def test_build_hub_index_embed_empty(self):
+        """Empty active vents list returns friendly placeholder prompt."""
+        embed = await self.cog.build_hub_index_embed(self.guild)
+        self.assertEqual(embed.title, "💬 Active Vent Channels")
+        self.assertIn("no active vent channels", embed.description)
+        self.assertIn("Start a Vent", embed.description)
+        self.assertIn("Auto-updates in real time", embed.footer.text)
+
+    async def test_build_hub_index_embed_populated(self):
+        """Populated active vents list formats mentions, topics, and status badges."""
+        ch1 = MagicMock(spec=discord.TextChannel)
+        ch1.id = 1001
+        ch1.mention = "<#1001>"
+
+        ch2 = MagicMock(spec=discord.TextChannel)
+        ch2.id = 1002
+        ch2.mention = "<#1002>"
+
+        def get_channel_side_effect(cid):
+            if cid == 1001:
+                return ch1
+            elif cid == 1002:
+                return ch2
+            return None
+
+        self.guild.get_channel.side_effect = get_channel_side_effect
+
+        now = 1700000000
+        async with self.cog.config.guild(self.guild).active_vents() as vents:
+            vents["1001"] = {
+                "author_id": 11,
+                "intent_key": "comfort",
+                "topic": "Rough Day",
+                "created_at": now - 100,
+                "is_locked": False,
+            }
+            vents["1002"] = {
+                "author_id": 22,
+                "intent_key": "advice",
+                "topic": None,
+                "created_at": now - 200,
+                "is_locked": True,
+            }
+
+        embed = await self.cog.build_hub_index_embed(self.guild)
+        self.assertEqual(embed.title, "💬 Active Vent Channels")
+        self.assertIn("<#1001>", embed.description)
+        self.assertIn('"Rough Day"', embed.description)
+        self.assertIn("🟢 *Open*", embed.description)
+        self.assertIn("<#1002>", embed.description)
+        self.assertIn("🔒 *Locked*", embed.description)
+        self.assertIn("2 active vents", embed.footer.text)
+
+    async def test_update_hub_index_sends_new_message(self):
+        """When no index message exists, update_hub_index sends a new message and records ID."""
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 5555
+        hub.permissions_for.return_value.view_channel = True
+        hub.permissions_for.return_value.send_messages = True
+        hub.permissions_for.return_value.embed_links = True
+
+        new_msg = MagicMock(spec=discord.Message)
+        new_msg.id = 7777
+        hub.send = AsyncMock(return_value=new_msg)
+
+        self.guild.get_channel.return_value = hub
+        await self.cog.config.guild(self.guild).hub_channel_id.set(5555)
+
+        await self.cog.update_hub_index(self.guild)
+        hub.send.assert_awaited_once()
+        self.assertEqual(await self.cog.config.guild(self.guild).hub_index_message_id(), 7777)
+
+    async def test_update_hub_index_edits_existing_message(self):
+        """When index message ID exists, update_hub_index fetches and edits it."""
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 5555
+        hub.permissions_for.return_value.view_channel = True
+        hub.permissions_for.return_value.send_messages = True
+        hub.permissions_for.return_value.embed_links = True
+
+        existing_msg = MagicMock(spec=discord.Message)
+        existing_msg.id = 7777
+        existing_msg.edit = AsyncMock()
+        hub.fetch_message = AsyncMock(return_value=existing_msg)
+        hub.send = AsyncMock()
+
+        self.guild.get_channel.return_value = hub
+        await self.cog.config.guild(self.guild).hub_channel_id.set(5555)
+        await self.cog.config.guild(self.guild).hub_index_message_id.set(7777)
+
+        await self.cog.update_hub_index(self.guild)
+        hub.fetch_message.assert_awaited_once_with(7777)
+        existing_msg.edit.assert_awaited_once()
+        hub.send.assert_not_awaited()
+
+    async def test_update_hub_index_reposts_on_not_found(self):
+        """When existing message was deleted from Discord, update_hub_index posts a fresh one."""
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 5555
+        hub.permissions_for.return_value.view_channel = True
+        hub.permissions_for.return_value.send_messages = True
+        hub.permissions_for.return_value.embed_links = True
+
+        hub.fetch_message = AsyncMock(side_effect=discord.NotFound(MagicMock(), "Deleted"))
+        new_msg = MagicMock(spec=discord.Message)
+        new_msg.id = 8888
+        hub.send = AsyncMock(return_value=new_msg)
+
+        self.guild.get_channel.return_value = hub
+        await self.cog.config.guild(self.guild).hub_channel_id.set(5555)
+        await self.cog.config.guild(self.guild).hub_index_message_id.set(7777)
+
+        await self.cog.update_hub_index(self.guild)
+        hub.send.assert_awaited_once()
+        self.assertEqual(await self.cog.config.guild(self.guild).hub_index_message_id(), 8888)
+
+    async def test_ventset_index_command(self):
+        """Test [p]ventset index and repost behavior."""
+        ctx = MagicMock()
+        ctx.guild = self.guild
+        ctx.send = AsyncMock()
+        ctx.clean_prefix = "!"
+
+        # When hub channel is not set
+        await self.cog.ventset_index.callback(self.cog, ctx)
+        self.assertIn("not configured", ctx.send.await_args.args[0])
+
+        # When hub channel is set
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 5555
+        hub.mention = "<#5555>"
+        hub.permissions_for.return_value.view_channel = True
+        hub.permissions_for.return_value.send_messages = True
+        hub.permissions_for.return_value.embed_links = True
+        self.guild.get_channel.return_value = hub
+        await self.cog.config.guild(self.guild).hub_channel_id.set(5555)
+
+        new_msg = MagicMock(spec=discord.Message)
+        new_msg.id = 9999
+        hub.send = AsyncMock(return_value=new_msg)
+
+        await self.cog.ventset_index.callback(self.cog, ctx)
+        self.assertIn("updated", ctx.send.await_args.args[0])
+
+        # Test repost=True deletes old message
+        old_msg = MagicMock(spec=discord.Message)
+        old_msg.delete = AsyncMock()
+        hub.fetch_message = AsyncMock(return_value=old_msg)
+        await self.cog.config.guild(self.guild).hub_index_message_id.set(9999)
+
+        reposted_msg = MagicMock(spec=discord.Message)
+        reposted_msg.id = 11111
+        hub.send = AsyncMock(return_value=reposted_msg)
+
+        await self.cog.ventset_index.callback(self.cog, ctx, repost=True)
+        old_msg.delete.assert_awaited_once()
+        hub.send.assert_awaited()
+
+    async def test_ventset_channel_creates_launcher_and_index(self):
+        """Setting vent hub channel posts launcher embed and index embed."""
+        ctx = MagicMock()
+        ctx.guild = self.guild
+        ctx.send = AsyncMock()
+        ctx.clean_prefix = "!"
+
+        hub = MagicMock(spec=discord.TextChannel)
+        hub.id = 4321
+        hub.mention = "<#4321>"
+        hub.category = None
+        hub.permissions_for.return_value.view_channel = True
+        hub.permissions_for.return_value.send_messages = True
+        hub.permissions_for.return_value.embed_links = True
+
+        launcher_msg = MagicMock(spec=discord.Message)
+        launcher_msg.id = 1000
+        index_msg = MagicMock(spec=discord.Message)
+        index_msg.id = 2000
+
+        hub.send = AsyncMock(side_effect=[launcher_msg, index_msg])
+        self.guild.get_channel.return_value = hub
+
+        await self.cog.ventset_channel.callback(self.cog, ctx, hub)
+        self.assertEqual(await self.cog.config.guild(self.guild).hub_channel_id(), 4321)
+        self.assertEqual(await self.cog.config.guild(self.guild).hub_index_message_id(), 2000)
+        self.assertEqual(hub.send.await_count, 2)
+
     async def test_admin_commands(self):
         """Test administration commands."""
         ctx = MagicMock()
@@ -738,12 +939,14 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         await self.cog.show_settings(ctx)
         call_kwargs = ctx.send.await_args.kwargs
         self.assertIn("embed", call_kwargs)
+        self.assertTrue(any(f.name == "Live Index" for f in call_kwargs["embed"].fields))
 
         # Test plaintext fallback (when embed_links = False)
         channel.permissions_for.return_value.embed_links = False
         await self.cog.show_settings(ctx)
         call_args = ctx.send.await_args
         self.assertIn("EphemeralVents Configuration", call_args.args[0])
+        self.assertIn("Live Index", call_args.args[0])
 
         # 8. intents_list embed vs plaintext fallback
         channel.permissions_for.return_value.embed_links = True

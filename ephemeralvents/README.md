@@ -15,6 +15,11 @@ Channels are automatically monitored and locked upon inactivity, and subsequentl
   - 🟢 **Relate / Shared Experience**: Seeking solidarity and shared stories.
   - 🔵 **Be Gentle**: Author is vulnerable; extra kindness requested.
   - 🟣 **Open / Any**: Open to any constructive interaction style.
+- **Active Vents Live Index**:
+  - Auto-updating embed posted in `#hub_channel` directly below the launcher embed.
+  - Lists all active vent channels with clickable channel mentions (`#channel-name`), topics, intent tags, status badges (`🟢 Open` vs `🔒 Locked`), and relative start times (`Started 5 minutes ago`).
+  - Solves Discord's community channel-hiding behavior so members can effortlessly browse and jump into active peer-support conversations.
+  - Auto-updates in real time upon channel creation, lock, manual closure, archive, deletion, or intent changes.
 - **Persistent Discord UI**:
   - **Launcher**: Persistent `Start a Vent` button in `#hub_channel`.
   - **Modal**: Optional brief topic/title input (max 30 characters).
@@ -47,9 +52,10 @@ All administrative settings are managed under the `[p]ventset` command group, re
 
 | Command | Description |
 | :--- | :--- |
-| `[p]ventset` / `[p]ventset show` | Display current EphemeralVents configuration and active vent count. |
+| `[p]ventset` / `[p]ventset show` | Display current EphemeralVents configuration, live index status, and active vent count. |
 | `[p]ventset help` (aliases: `commands`, `subcommands`) | Display help and list all available `ventset` subcommands and their usage. |
-| `[p]ventset channel [#channel]` | Set the vent hub launcher channel and post the launcher embed (or clear if no channel given). |
+| `[p]ventset channel [#channel]` | Set the vent hub launcher channel, post the launcher and index embeds (or clear if no channel given). |
+| `[p]ventset index [repost=False]` (alias: `refresh`) | Refresh or repost the active vents live index embed in the configured hub channel. |
 | `[p]ventset modrole [@role]` | Set or clear the moderator role for vent oversight and archive access. |
 | `[p]ventset archivecategory [category]` | Set or clear an optional category to move archived vent channels into. |
 | `[p]ventset archiveemoji [emoji]` | Set or reset the prefix emoji used when renaming archived channels (default: `📦`). |

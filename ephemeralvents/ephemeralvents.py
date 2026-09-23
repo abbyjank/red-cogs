@@ -130,6 +130,8 @@ class EphemeralVents(commands.Cog):
 
         # Concurrency locks per guild to avoid race conditions during creation
         self._guild_locks: Dict[int, asyncio.Lock] = {}
+        # Concurrency locks per guild for serializing hub index message updates
+        self._index_update_locks: Dict[int, asyncio.Lock] = {}
 
     async def cog_load(self) -> None:
         """Register persistent views, load active channels cache, and start background loop."""
@@ -158,6 +160,12 @@ class EphemeralVents(commands.Cog):
                         else DEFAULT_CRISIS_HEADER
                     )
                     await self.config.guild_from_id(guild_id).crisis_header.set(new_crisis)
+
+                # Asynchronously update hub live index on startup if hub channel is configured
+                if guild_data.get("hub_channel_id"):
+                    g = self.bot.get_guild(int(guild_id))
+                    if g:
+                        asyncio.create_task(self.update_hub_index(g))
         except Exception as e:
             log.error(f"Failed to load active vents cache: {e}")
 
@@ -173,6 +181,12 @@ class EphemeralVents(commands.Cog):
         if guild_id not in self._guild_locks:
             self._guild_locks[guild_id] = asyncio.Lock()
         return self._guild_locks[guild_id]
+
+    def _get_index_lock(self, guild_id: int) -> asyncio.Lock:
+        """Retrieve or create an asyncio lock for updating the hub index embed."""
+        if guild_id not in self._index_update_locks:
+            self._index_update_locks[guild_id] = asyncio.Lock()
+        return self._index_update_locks[guild_id]
 
     # -------------------------------------------------------------------------
     # Helper & Validation Methods
@@ -260,7 +274,130 @@ class EphemeralVents(commands.Cog):
         if vent_data and vent_data.get("author_id") == member.id:
             return True
 
-        return await self.can_moderate_vent(guild, member, channel)
+    async def build_hub_index_embed(self, guild: discord.Guild) -> discord.Embed:
+        """Construct the live active vents index embed for the hub channel."""
+        guild_config = self.config.guild(guild)
+        active_vents = await guild_config.active_vents()
+        intents = await guild_config.intents()
+
+        embed = discord.Embed(
+            title="💬 Active Vent Channels",
+            color=DEFAULT_EMBED_COLOR,
+            timestamp=discord.utils.utcnow(),
+        )
+
+        valid_vents = []
+        for channel_id_str, vent_data in active_vents.items():
+            try:
+                ch_id = int(channel_id_str)
+            except (ValueError, TypeError):
+                continue
+            ch = guild.get_channel(ch_id)
+            if ch is not None:
+                valid_vents.append((ch, vent_data))
+
+        # Sort by creation timestamp descending (newest first)
+        valid_vents.sort(
+            key=lambda x: x[1].get("created_at", 0),
+            reverse=True,
+        )
+
+        if not valid_vents:
+            embed.description = (
+                "There are currently no active vent channels.\n\n"
+                "Need a safe space to share what's on your mind? Click **Start a Vent** above!"
+            )
+            embed.set_footer(text="Active Vents Index • Auto-updates in real time")
+            return embed
+
+        lines = []
+        for channel, vent_data in valid_vents:
+            intent_key = vent_data.get("intent_key", "")
+            intent_info = intents.get(intent_key, {})
+            intent_emoji = intent_info.get("emoji", "💬")
+            intent_label = intent_info.get("label", intent_key.capitalize())
+            topic = vent_data.get("topic")
+            created_at = int(vent_data.get("created_at", time.time()))
+            is_locked = vent_data.get("is_locked", False)
+
+            status_badge = "🔒 *Locked*" if is_locked else "🟢 *Open*"
+            if topic:
+                clean_topic = topic.replace("\n", " ").strip()
+                if len(clean_topic) > 50:
+                    clean_topic = clean_topic[:47] + "..."
+                topic_disp = f" — *\"{clean_topic}\"*"
+            else:
+                topic_disp = ""
+
+            line = (
+                f"• {channel.mention}{topic_disp}\n"
+                f"  └ {intent_emoji} **{intent_label}** • {status_badge} • Started <t:{created_at}:R>"
+            )
+            lines.append(line)
+
+        content = ""
+        total_count = len(valid_vents)
+        displayed_count = 0
+        for line in lines:
+            candidate = f"{content}\n\n{line}" if content else line
+            if len(candidate) > 3800:
+                break
+            content = candidate
+            displayed_count += 1
+
+        if displayed_count < total_count:
+            remaining = total_count - displayed_count
+            content += f"\n\n*...and {remaining} more active vent(s)*"
+
+        embed.description = content
+        count_str = f"{total_count} active vent{'s' if total_count != 1 else ''}"
+        embed.set_footer(text=f"{count_str} • Auto-updates in real time")
+        return embed
+
+    async def update_hub_index(self, guild: discord.Guild) -> None:
+        """Update or create the active vents index embed in the vent hub channel."""
+        async with self._get_index_lock(guild.id):
+            guild_config = self.config.guild(guild)
+            hub_channel_id = await guild_config.hub_channel_id()
+            if not hub_channel_id:
+                return
+
+            hub_channel = guild.get_channel(hub_channel_id)
+            if not isinstance(hub_channel, discord.TextChannel):
+                return
+
+            bot_perms = hub_channel.permissions_for(guild.me)
+            if not (bot_perms.view_channel and bot_perms.send_messages and bot_perms.embed_links):
+                return
+
+            embed = await self.build_hub_index_embed(guild)
+            index_msg_id = await guild_config.hub_index_message_id()
+
+            if index_msg_id:
+                try:
+                    index_msg = await hub_channel.fetch_message(index_msg_id)
+                    await index_msg.edit(embed=embed)
+                    return
+                except discord.NotFound:
+                    # Message was deleted in Discord; post a fresh one below
+                    pass
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    log.warning(
+                        f"Failed to edit hub index message {index_msg_id} in guild {guild.id}: {e}"
+                    )
+                    return
+
+            try:
+                new_msg = await hub_channel.send(embed=embed)
+                msg_id = getattr(new_msg, "id", None)
+                try:
+                    await guild_config.hub_index_message_id.set(int(msg_id))
+                except (ValueError, TypeError):
+                    pass
+            except (discord.Forbidden, discord.HTTPException) as e:
+                log.warning(
+                    f"Failed to send hub index message in channel {hub_channel.id} in guild {guild.id}: {e}"
+                )
 
     # -------------------------------------------------------------------------
     # Vent Lifecycle Actions: Create, Lock, Archive, Delete
@@ -407,12 +544,15 @@ class EphemeralVents(commands.Cog):
                 vents[str(channel.id)] = {
                     "author_id": author.id,
                     "intent_key": intent_key,
+                    "topic": topic,
                     "created_at": now,
                     "last_active_at": now,
                     "is_locked": False,
                     "locked_at": None,
                 }
             self._active_channel_ids.add(channel.id)
+
+            await self.update_hub_index(guild)
 
             return channel
 
@@ -454,6 +594,8 @@ class EphemeralVents(commands.Cog):
             if channel_id_str in vents:
                 vents[channel_id_str]["is_locked"] = True
                 vents[channel_id_str]["locked_at"] = now
+
+        await self.update_hub_index(guild)
 
     async def archive_vent_channel(
         self, channel: discord.TextChannel, reason: str = "Ephemeral vent archived"
@@ -550,6 +692,8 @@ class EphemeralVents(commands.Cog):
             vents.pop(channel_id_str, None)
         self._active_channel_ids.discard(channel.id)
 
+        await self.update_hub_index(guild)
+
     async def delete_vent_channel(
         self, channel: discord.TextChannel, reason: str = "Ephemeral vent deleted"
     ) -> None:
@@ -561,6 +705,8 @@ class EphemeralVents(commands.Cog):
         async with self.config.guild(guild).active_vents() as vents:
             vents.pop(channel_id_str, None)
         self._active_channel_ids.discard(channel.id)
+
+        await self.update_hub_index(guild)
 
         try:
             await channel.delete(reason=reason)
@@ -640,11 +786,18 @@ class EphemeralVents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        """Clean up config when a tracked vent channel is manually deleted."""
+        """Clean up config when a tracked vent channel or hub channel is manually deleted."""
+        guild = channel.guild
+        hub_channel_id = await self.config.guild(guild).hub_channel_id()
+        if channel.id == hub_channel_id:
+            await self.config.guild(guild).hub_channel_id.set(None)
+            await self.config.guild(guild).hub_index_message_id.set(None)
+
         if channel.id in self._active_channel_ids:
             self._active_channel_ids.discard(channel.id)
-            async with self.config.guild(channel.guild).active_vents() as vents:
+            async with self.config.guild(guild).active_vents() as vents:
                 vents.pop(str(channel.id), None)
+            await self.update_hub_index(guild)
 
     # -------------------------------------------------------------------------
     # Background Lifecycle Loop
@@ -729,6 +882,7 @@ class EphemeralVents(commands.Cog):
                 for cid_str in stale_channels:
                     vents.pop(cid_str, None)
                     self._active_channel_ids.discard(int(cid_str))
+            await self.update_hub_index(guild)
 
     # -------------------------------------------------------------------------
     # Administration Commands ([p]ventset)
@@ -759,6 +913,7 @@ class EphemeralVents(commands.Cog):
         cfg = self.config.guild(guild)
 
         hub_channel_id = await cfg.hub_channel_id()
+        hub_index_message_id = await cfg.hub_index_message_id()
         mod_role_id = await cfg.mod_role_id()
         archive_category_id = await cfg.archive_category_id()
         archive_emoji = await cfg.archive_emoji()
@@ -787,10 +942,12 @@ class EphemeralVents(commands.Cog):
         )
 
         hub_desc = hub_ch.mention if hub_ch else "*Not set*"
+        index_desc = "🟢 Active" if hub_index_message_id else "*None*"
         mod_desc = mod_role.mention if mod_role else "*Not set*"
         arch_desc = archive_cat.name if archive_cat else "*None (keep in original category)*"
 
         embed.add_field(name="Hub Channel", value=hub_desc, inline=True)
+        embed.add_field(name="Live Index", value=index_desc, inline=True)
         embed.add_field(name="Mod Role", value=mod_desc, inline=True)
         embed.add_field(name="Archive Category", value=arch_desc, inline=True)
         embed.add_field(name="Archive Prefix", value=f"`{archive_emoji}-`", inline=True)
@@ -829,6 +986,7 @@ class EphemeralVents(commands.Cog):
         text_lines = [
             "**⚙️ EphemeralVents Configuration**",
             f"• **Hub Channel:** {hub_desc}",
+            f"• **Live Index:** {index_desc}",
             f"• **Mod Role:** {mod_desc}",
             f"• **Archive Category:** {arch_desc}",
             f"• **Archive Channel Prefix:** `{archive_emoji}-`",
@@ -867,6 +1025,7 @@ class EphemeralVents(commands.Cog):
         """
         if channel is None:
             await self.config.guild(ctx.guild).hub_channel_id.set(None)
+            await self.config.guild(ctx.guild).hub_index_message_id.set(None)
             await ctx.send("✅ Vent hub channel has been cleared and disabled.")
             return
 
@@ -887,6 +1046,19 @@ class EphemeralVents(commands.Cog):
                     "I will be unable to generate vent channels there until permissions are granted."
                 )
 
+        # Clean up previous index embed message if present
+        old_hub_channel_id = await self.config.guild(ctx.guild).hub_channel_id()
+        old_index_msg_id = await self.config.guild(ctx.guild).hub_index_message_id()
+        if old_hub_channel_id and old_index_msg_id:
+            old_hub_ch = ctx.guild.get_channel(old_hub_channel_id)
+            if isinstance(old_hub_ch, discord.TextChannel):
+                try:
+                    old_msg = await old_hub_ch.fetch_message(old_index_msg_id)
+                    await old_msg.delete()
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
+        await self.config.guild(ctx.guild).hub_index_message_id.set(None)
+
         await self.config.guild(ctx.guild).hub_channel_id.set(channel.id)
 
         # Post / refresh launcher embed
@@ -905,11 +1077,44 @@ class EphemeralVents(commands.Cog):
 
         try:
             await channel.send(embed=launcher_embed, view=view)
-            await ctx.send(f"✅ Vent hub channel set to {channel.mention} and launcher embed posted.")
+            await self.update_hub_index(ctx.guild)
+            await ctx.send(f"✅ Vent hub channel set to {channel.mention} and launcher/index embeds posted.")
         except discord.Forbidden:
             await ctx.send(
                 f"✅ Vent hub channel set to {channel.mention}, but I was unable to send the launcher embed (Forbidden)."
             )
+
+    @ventset.command(name="index", aliases=["refresh"])
+    async def ventset_index(self, ctx: commands.Context, repost: bool = False) -> None:
+        """Refresh or repost the active vents index embed.
+
+        Update the live index embed in the configured vent hub channel.
+        Pass True to delete and repost the index embed at the bottom of the channel.
+        """
+        hub_channel_id = await self.config.guild(ctx.guild).hub_channel_id()
+        if not hub_channel_id:
+            await ctx.send(
+                f"❌ Vent hub channel is not configured. Set it first with `{ctx.clean_prefix}ventset channel <#channel>`."
+            )
+            return
+
+        hub_channel = ctx.guild.get_channel(hub_channel_id)
+        if not isinstance(hub_channel, discord.TextChannel):
+            await ctx.send("❌ Configured vent hub channel not found.")
+            return
+
+        if repost:
+            old_index_id = await self.config.guild(ctx.guild).hub_index_message_id()
+            if old_index_id:
+                try:
+                    old_msg = await hub_channel.fetch_message(old_index_id)
+                    await old_msg.delete()
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
+                await self.config.guild(ctx.guild).hub_index_message_id.set(None)
+
+        await self.update_hub_index(ctx.guild)
+        await ctx.send(f"✅ Active vents index updated in {hub_channel.mention}.")
 
     @ventset.command(name="modrole")
     async def ventset_modrole(
@@ -1235,6 +1440,8 @@ class EphemeralVents(commands.Cog):
                 "header_note": clean_note,
             }
 
+        await self.update_hub_index(ctx.guild)
+
         await ctx.send(
             f"✅ Intent `{clean_slug}` successfully configured:\n"
             f"• **Emoji:** {emoji.strip()}\n"
@@ -1262,6 +1469,8 @@ class EphemeralVents(commands.Cog):
         async with self.config.guild(ctx.guild).intents() as conf_intents:
             conf_intents.pop(clean_slug, None)
 
+        await self.update_hub_index(ctx.guild)
+
         await ctx.send(f"✅ Intent `{clean_slug}` has been removed.")
 
     @ventset_intents.command(name="reset")
@@ -1271,6 +1480,7 @@ class EphemeralVents(commands.Cog):
         Restore configured intents to the 5 default emoji presets.
         """
         await self.config.guild(ctx.guild).intents.set(DEFAULT_INTENTS)
+        await self.update_hub_index(ctx.guild)
         await ctx.send("✅ Configured intents have been reset to the 5 default presets (🟠, 🟡, 🟢, 🔵, 🟣).")
 
     # -------------------------------------------------------------------------
