@@ -72,6 +72,7 @@ MAX_TOPIC_LENGTH: int = 30
 MAX_SLUG_LENGTH: int = 25
 CONFIG_IDENTIFIER: int = 748291048291
 HUB_MESSAGE_DELETE_DELAY: float = 60.0
+ADAPTIVE_DENSITY_THRESHOLD: int = 15
 
 # Visual color mapping for intent embeds
 INTENT_COLORS: Dict[str, discord.Color] = {

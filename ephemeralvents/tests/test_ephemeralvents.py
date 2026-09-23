@@ -801,6 +801,75 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<#1002>", embed.description)
         self.assertIn("🔒 *Locked*", embed.description)
         self.assertIn("2 active vents", embed.footer.text)
+        self.assertNotIn("(Compact view)", embed.footer.text)
+        # Verify normal 2-line formatting with sub-line indent
+        self.assertIn("  └ ", embed.description)
+
+    async def test_build_hub_index_embed_compact_density(self):
+        """When active vents exceed threshold (>15), embed switches to compact 1-line density."""
+        channels = {}
+        now = 1700000000
+        for i in range(16):
+            cid = 2000 + i
+            ch = MagicMock(spec=discord.TextChannel)
+            ch.id = cid
+            ch.mention = f"<#{cid}>"
+            channels[cid] = ch
+
+        self.guild.get_channel.side_effect = lambda cid: channels.get(cid)
+
+        async with self.cog.config.guild(self.guild).active_vents() as vents:
+            for i in range(16):
+                cid = str(2000 + i)
+                vents[cid] = {
+                    "author_id": 100 + i,
+                    "intent_key": "comfort",
+                    "topic": f"Topic {i}",
+                    "created_at": now - (i * 10),
+                    "is_locked": False,
+                }
+
+        embed = await self.cog.build_hub_index_embed(self.guild)
+        self.assertIn("16 active vents (Compact view)", embed.footer.text)
+        # Horizontal legend format
+        self.assertIn(" • ", embed.description.split("\n\n---\n\n")[0])
+        # Compact single-line channel entries (no '  └ ' sub-indent)
+        self.assertNotIn("  └ ", embed.description)
+        self.assertIn("• <#2000> 🟡 **Comfort & Validation** • 🟢 *Open*", embed.description)
+
+    async def test_build_hub_index_embed_overflow_field(self):
+        """When channel count exceeds description capacity in compact mode, overflow moves into a field."""
+        channels = {}
+        now = 1700000000
+        # Create 60 vents to exceed 3800 chars in description
+        for i in range(60):
+            cid = 3000 + i
+            ch = MagicMock(spec=discord.TextChannel)
+            ch.id = cid
+            ch.mention = f"<#{cid}>"
+            channels[cid] = ch
+
+        self.guild.get_channel.side_effect = lambda cid: channels.get(cid)
+
+        async with self.cog.config.guild(self.guild).active_vents() as vents:
+            for i in range(60):
+                cid = str(3000 + i)
+                vents[cid] = {
+                    "author_id": 200 + i,
+                    "intent_key": "comfort",
+                    "topic": f"A relatively long vent topic description {i}",
+                    "created_at": now - (i * 10),
+                    "is_locked": False,
+                }
+
+        embed = await self.cog.build_hub_index_embed(self.guild)
+        self.assertIn("60 active vents (Compact view)", embed.footer.text)
+        self.assertLessEqual(len(embed.description), 3800)
+        self.assertEqual(len(embed.fields), 1)
+        self.assertEqual(embed.fields[0].name, "Active Channels (cont.)")
+        self.assertLessEqual(len(embed.fields[0].value), 1024)
+        self.assertIn("more active vent(s)", embed.fields[0].value)
+
 
     async def test_update_hub_index_sends_new_message(self):
         """When no index message exists, update_hub_index sends a new message and records ID."""

@@ -19,6 +19,7 @@ from redbot.core import Config, commands
 from redbot.core.bot import Red
 
 from .constants import (
+    ADAPTIVE_DENSITY_THRESHOLD,
     CLOSE_BUTTON_ID,
     CONFIG_IDENTIFIER,
     DEFAULT_ARCHIVE_EMOJI,
@@ -323,18 +324,6 @@ class EphemeralVents(commands.Cog):
             timestamp=discord.utils.utcnow(),
         )
 
-        legend_lines = []
-        for slug, data in intents.items():
-            emoji = data.get("emoji", "💬")
-            label = data.get("label", slug.capitalize())
-            legend_lines.append(f"{emoji} **{label}**")
-
-        legend_block = (
-            "**Interaction Tags:**\n" + "\n".join(legend_lines)
-            if legend_lines
-            else ""
-        )
-
         valid_vents = []
         for channel_id_str, vent_data in active_vents.items():
             try:
@@ -356,6 +345,28 @@ class EphemeralVents(commands.Cog):
             key=lambda x: x[1].get("created_at", 0),
             reverse=True,
         )
+
+        total_count = len(valid_vents)
+        is_compact = total_count > ADAPTIVE_DENSITY_THRESHOLD
+
+        legend_lines = []
+        for slug, data in intents.items():
+            emoji = data.get("emoji", "💬")
+            label = data.get("label", slug.capitalize())
+            legend_lines.append(f"{emoji} **{label}**")
+
+        if is_compact:
+            legend_block = (
+                "**Interaction Tags:** " + " • ".join(legend_lines)
+                if legend_lines
+                else ""
+            )
+        else:
+            legend_block = (
+                "**Interaction Tags:**\n" + "\n".join(legend_lines)
+                if legend_lines
+                else ""
+            )
 
         if not valid_vents:
             empty_msg = (
@@ -381,38 +392,71 @@ class EphemeralVents(commands.Cog):
             is_locked = vent_data.get("is_locked", False)
 
             status_badge = "🔒 *Locked*" if is_locked else "🟢 *Open*"
-            if topic:
-                clean_topic = topic.replace("\n", " ").strip()
-                if len(clean_topic) > 50:
-                    clean_topic = clean_topic[:47] + "..."
-                topic_disp = f" — *\"{clean_topic}\"*"
+            if is_compact:
+                if topic:
+                    clean_topic = topic.replace("\n", " ").strip()
+                    if len(clean_topic) > 35:
+                        clean_topic = clean_topic[:32] + "..."
+                    topic_disp = f" — *\"{clean_topic}\"*"
+                else:
+                    topic_disp = ""
+                line = (
+                    f"• <#{ch_id}> {intent_emoji} **{intent_label}** • {status_badge}{topic_disp} • <t:{created_at}:R>"
+                )
             else:
-                topic_disp = ""
-
-            line = (
-                f"• <#{ch_id}>{topic_disp}\n"
-                f"  └ {intent_emoji} **{intent_label}** • {status_badge} • Started <t:{created_at}:R>"
-            )
+                if topic:
+                    clean_topic = topic.replace("\n", " ").strip()
+                    if len(clean_topic) > 50:
+                        clean_topic = clean_topic[:47] + "..."
+                    topic_disp = f" — *\"{clean_topic}\"*"
+                else:
+                    topic_disp = ""
+                line = (
+                    f"• <#{ch_id}>{topic_disp}\n"
+                    f"  └ {intent_emoji} **{intent_label}** • {status_badge} • Started <t:{created_at}:R>"
+                )
             lines.append(line)
 
-        header = f"{legend_block}\n\n---\n\n**Active Channels:**\n" if legend_block else "**Active Channels:**\n"
+        header = (
+            f"{legend_block}\n\n---\n\n**Active Channels:**\n"
+            if legend_block
+            else "**Active Channels:**\n"
+        )
+        joiner = "\n" if is_compact else "\n\n"
         content = ""
-        total_count = len(valid_vents)
         displayed_count = 0
         for line in lines:
-            candidate = f"{content}\n\n{line}" if content else f"{header}{line}"
+            candidate = f"{content}{joiner}{line}" if content else f"{header}{line}"
             if len(candidate) > 3800:
                 break
             content = candidate
             displayed_count += 1
 
-        if displayed_count < total_count:
-            remaining = total_count - displayed_count
-            content += f"\n\n*...and {remaining} more active vent(s)*"
+        field_content = ""
+        field_displayed = 0
+        if displayed_count < total_count and is_compact:
+            for line in lines[displayed_count:]:
+                candidate = f"{field_content}\n{line}" if field_content else line
+                if len(candidate) > 950:
+                    break
+                field_content = candidate
+                field_displayed += 1
+
+        remaining = total_count - (displayed_count + field_displayed)
+        if remaining > 0:
+            overflow_text = f"*...and {remaining} more active vent(s)*"
+            if field_content:
+                field_content += f"\n{overflow_text}"
+            else:
+                content += f"\n\n{overflow_text}"
 
         embed.description = content
+        if field_content:
+            embed.add_field(name="Active Channels (cont.)", value=field_content, inline=False)
+
         count_str = f"{total_count} active vent{'s' if total_count != 1 else ''}"
-        embed.set_footer(text=f"{count_str} • Auto-updates in real time")
+        mode_suffix = " (Compact view)" if is_compact else ""
+        embed.set_footer(text=f"{count_str}{mode_suffix} • Auto-updates in real time")
         return embed
 
     async def update_hub_index(self, guild: discord.Guild) -> None:
