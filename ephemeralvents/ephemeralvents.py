@@ -286,6 +286,18 @@ class EphemeralVents(commands.Cog):
             timestamp=discord.utils.utcnow(),
         )
 
+        legend_lines = []
+        for slug, data in intents.items():
+            emoji = data.get("emoji", "💬")
+            label = data.get("label", slug.capitalize())
+            legend_lines.append(f"{emoji} **{label}**")
+
+        legend_block = (
+            "**Interaction Tags:**\n" + "\n".join(legend_lines)
+            if legend_lines
+            else ""
+        )
+
         valid_vents = []
         for channel_id_str, vent_data in active_vents.items():
             try:
@@ -303,9 +315,14 @@ class EphemeralVents(commands.Cog):
         )
 
         if not valid_vents:
-            embed.description = (
+            empty_msg = (
                 "There are currently no active vent channels.\n\n"
                 "Need a safe space to share what's on your mind? Click **Start a Vent** above!"
+            )
+            embed.description = (
+                f"{legend_block}\n\n---\n\n{empty_msg}"
+                if legend_block
+                else empty_msg
             )
             embed.set_footer(text="Active Vents Index • Auto-updates in real time")
             return embed
@@ -335,11 +352,12 @@ class EphemeralVents(commands.Cog):
             )
             lines.append(line)
 
+        header = f"{legend_block}\n\n---\n\n**Active Channels:**\n" if legend_block else "**Active Channels:**\n"
         content = ""
         total_count = len(valid_vents)
         displayed_count = 0
         for line in lines:
-            candidate = f"{content}\n\n{line}" if content else line
+            candidate = f"{content}\n\n{line}" if content else f"{header}{line}"
             if len(candidate) > 3800:
                 break
             content = candidate

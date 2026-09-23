@@ -17,6 +17,7 @@ Channels are automatically monitored and locked upon inactivity, and subsequentl
   - 🟣 **Open / Any**: Open to any constructive interaction style.
 - **Active Vents Live Index**:
   - Auto-updating embed posted in `#hub_channel` directly below the launcher embed.
+  - Features an **Interaction Tag Legend** at the top displaying each configured emoji and label so members can instantly recognize channel intents.
   - Lists all active vent channels with clickable channel mentions (`#channel-name`), topics, intent tags, status badges (`🟢 Open` vs `🔒 Locked`), and relative start times (`Started 5 minutes ago`).
   - Solves Discord's community channel-hiding behavior so members can effortlessly browse and jump into active peer-support conversations.
   - Auto-updates in real time upon channel creation, lock, manual closure, archive, deletion, or intent changes.

@@ -647,15 +647,17 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.cog.config.guild(self.guild).hub_index_message_id())
 
     async def test_build_hub_index_embed_empty(self):
-        """Empty active vents list returns friendly placeholder prompt."""
+        """Empty active vents list returns friendly placeholder prompt with interaction tags legend."""
         embed = await self.cog.build_hub_index_embed(self.guild)
         self.assertEqual(embed.title, "💬 Active Vent Channels")
+        self.assertIn("**Interaction Tags:**", embed.description)
+        self.assertIn("🟡 **Comfort & Validation**", embed.description)
         self.assertIn("no active vent channels", embed.description)
         self.assertIn("Start a Vent", embed.description)
         self.assertIn("Auto-updates in real time", embed.footer.text)
 
     async def test_build_hub_index_embed_populated(self):
-        """Populated active vents list formats mentions, topics, and status badges."""
+        """Populated active vents list formats legend, mentions, topics, and status badges."""
         ch1 = MagicMock(spec=discord.TextChannel)
         ch1.id = 1001
         ch1.mention = "<#1001>"
@@ -692,6 +694,14 @@ class TestCogLogic(unittest.IsolatedAsyncioTestCase):
 
         embed = await self.cog.build_hub_index_embed(self.guild)
         self.assertEqual(embed.title, "💬 Active Vent Channels")
+        self.assertIn("**Interaction Tags:**", embed.description)
+        self.assertIn("🟡 **Comfort & Validation**", embed.description)
+        self.assertIn("**Active Channels:**", embed.description)
+        # Verify legend comes before the active channels list
+        self.assertLess(
+            embed.description.index("**Interaction Tags:**"),
+            embed.description.index("**Active Channels:**"),
+        )
         self.assertIn("<#1001>", embed.description)
         self.assertIn('"Rough Day"', embed.description)
         self.assertIn("🟢 *Open*", embed.description)
